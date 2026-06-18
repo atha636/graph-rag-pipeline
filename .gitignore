@@ -1,0 +1,48 @@
+# =========================
+# Python
+# =========================
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual Environment
+venv/
+.venv/
+env/
+
+# Environment Variables / Secrets
+.env
+
+# VS Code
+.vscode/
+
+# JetBrains IDE
+.idea/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Logs
+*.log
+
+# Python Packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Type checking
+.mypy_cache/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Docker
+.dockerignore
