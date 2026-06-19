@@ -31,3 +31,7 @@ pytest-asyncio==0.24.0
 
 # Type Checking
 mypy==1.11.2
+
+# Embeddings
+sentence-transformers==3.1.1
+torch==2.4.1
