@@ -90,11 +90,16 @@ class GraphService:
 
         try:
             query = """
-            MATCH (a:Entity)-[r]->(b:Entity)
-            WHERE toLower(a.name) CONTAINS toLower($name)
-            RETURN a.name AS source,
-                   type(r) AS relationship,
-                   b.name AS target
+            MATCH (a:Entity)-[r]-(b:Entity)
+WHERE 
+    toLower(a.name) CONTAINS toLower($name)
+    OR
+    toLower(b.name) CONTAINS toLower($name)
+
+RETURN DISTINCT
+    startNode(r).name AS source,
+    type(r) AS relationship,
+    endNode(r).name AS target
             """
 
             with self.driver.session() as session:

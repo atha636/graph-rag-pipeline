@@ -16,6 +16,9 @@ from src.models.response import QueryResponse, Source
 from src.services.vector_service import VectorService
 from src.services.graph_service import GraphService
 from src.services.llm_service import LLMService
+from src.services.entity_service import (
+    EntityExtractionService
+)
 
 
 # Configure logger
@@ -26,6 +29,7 @@ configure_logger()
 vector_service = None
 graph_service = None
 llm_service = None
+entity_service = None
 
 
 @asynccontextmanager
@@ -37,12 +41,14 @@ async def lifespan(app: FastAPI):
     global vector_service
     global graph_service
     global llm_service
-
+    global entity_service
+    
     logger.info("Starting Graph RAG API")
 
     vector_service = VectorService()
     graph_service = GraphService()
     llm_service = LLMService()
+    entity_service = EntityExtractionService()
 
     logger.info("All AI services initialized")
 
@@ -103,19 +109,49 @@ async def query_graph_rag(
     )
 
     # Run both retrievals simultaneously
+        # Start vector search
     vector_task = asyncio.to_thread(
         vector_service.search,
         request.query
     )
 
-    graph_task = asyncio.to_thread(
-        graph_service.search_entities,
+    # Extract entities using LLM
+    entities = await asyncio.to_thread(
+        entity_service.extract_entities,
         request.query
     )
 
-    vector_results, graph_results = await asyncio.gather(
+    logger.info(
+        f"Extracted entities: {entities}"
+    )
+
+    # Create graph search tasks
+    graph_tasks = [
+        asyncio.to_thread(
+            graph_service.search_entities,
+            entity
+        )
+        for entity in entities
+    ]
+
+    # Run vector and graph retrieval together
+    results = await asyncio.gather(
         vector_task,
-        graph_task
+        *graph_tasks
+    )
+
+    # First result is vector search
+    vector_results = results[0]
+
+    # Remaining results are graph searches
+    graph_results = []
+
+    for result in results[1:]:
+        graph_results.extend(result)
+
+    logger.info(
+        f"Vector results: {len(vector_results)} | "
+        f"Graph results: {len(graph_results)}"
     )
 
     # Build vector context
