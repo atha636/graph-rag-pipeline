@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     # Pinecone Configuration
     PINECONE_API_KEY: str
     PINECONE_INDEX_NAME: str
+    PINECONE_NAMESPACE: str = "default"
 
     # Neo4j Configuration
     NEO4J_URI: str
