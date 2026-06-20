@@ -17,7 +17,10 @@ class GraphService:
             logger.info(
                 "Initializing Neo4j Graph Service..."
             )
-
+            
+            logger.info(f"NEO4J_URI: {settings.NEO4J_URI}")
+            logger.info(f"NEO4J_USERNAME: {settings.NEO4J_USERNAME}")
+            
             self.driver = GraphDatabase.driver(
                 settings.NEO4J_URI,
                 auth=(

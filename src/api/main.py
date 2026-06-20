@@ -16,8 +16,12 @@ from src.models.response import QueryResponse, Source
 from src.services.vector_service import VectorService
 from src.services.graph_service import GraphService
 from src.services.llm_service import LLMService
-from src.services.entity_service import (
-    EntityExtractionService
+from src.services.entity_service import EntityExtractionService
+from src.services.document_service import DocumentService
+
+from src.api.upload import (
+    router as upload_router,
+    initialize_document_service
 )
 
 
@@ -30,6 +34,7 @@ vector_service = None
 graph_service = None
 llm_service = None
 entity_service = None
+document_service = None
 
 
 @asynccontextmanager
@@ -42,13 +47,27 @@ async def lifespan(app: FastAPI):
     global graph_service
     global llm_service
     global entity_service
-    
+    global document_service
+
     logger.info("Starting Graph RAG API")
 
     vector_service = VectorService()
+
     graph_service = GraphService()
+
     llm_service = LLMService()
+
     entity_service = EntityExtractionService()
+
+    document_service = DocumentService(
+        vector_service=vector_service,
+        graph_service=graph_service,
+        entity_service=entity_service
+    )
+
+    initialize_document_service(
+        document_service
+    )
 
     logger.info("All AI services initialized")
 
@@ -67,13 +86,17 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.include_router(upload_router)
+
 
 @app.exception_handler(GraphRAGException)
 async def application_exception_handler(
     request: Request,
     exc: GraphRAGException
 ):
-    logger.error(f"Application error: {exc}")
+    logger.error(
+        f"Application error: {exc}"
+    )
 
     return JSONResponse(
         status_code=500,
@@ -108,14 +131,13 @@ async def query_graph_rag(
         f"Received query: {request.query}"
     )
 
-    # Run both retrievals simultaneously
-        # Start vector search
+    # Start vector search
     vector_task = asyncio.to_thread(
         vector_service.search,
         request.query
     )
 
-    # Extract entities using LLM
+    # Extract entities
     entities = await asyncio.to_thread(
         entity_service.extract_entities,
         request.query
@@ -125,7 +147,7 @@ async def query_graph_rag(
         f"Extracted entities: {entities}"
     )
 
-    # Create graph search tasks
+    # Create graph tasks
     graph_tasks = [
         asyncio.to_thread(
             graph_service.search_entities,
@@ -134,16 +156,14 @@ async def query_graph_rag(
         for entity in entities
     ]
 
-    # Run vector and graph retrieval together
+    # Execute searches concurrently
     results = await asyncio.gather(
         vector_task,
         *graph_tasks
     )
 
-    # First result is vector search
     vector_results = results[0]
 
-    # Remaining results are graph searches
     graph_results = []
 
     for result in results[1:]:
@@ -168,7 +188,7 @@ async def query_graph_rag(
         for item in graph_results
     )
 
-    # Generate final answer
+    # Generate final response
     answer = await asyncio.to_thread(
         llm_service.generate_response,
         request.query,
@@ -198,9 +218,7 @@ async def query_graph_rag(
             )
         )
 
-    latency = (
-        time.time() - start_time
-    ) * 1000
+    latency = (time.time() - start_time) * 1000
 
     logger.info(
         f"Query completed in {latency:.2f} ms"
