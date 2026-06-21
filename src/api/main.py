@@ -17,6 +17,9 @@ from src.services.vector_service import VectorService
 from src.services.graph_service import GraphService
 from src.services.llm_service import LLMService
 from src.services.entity_service import EntityExtractionService
+from src.services.relationship_service import (
+    RelationshipExtractionService
+)
 from src.services.document_service import DocumentService
 
 from src.api.upload import (
@@ -34,6 +37,7 @@ vector_service = None
 graph_service = None
 llm_service = None
 entity_service = None
+relationship_service = None
 document_service = None
 
 
@@ -47,6 +51,7 @@ async def lifespan(app: FastAPI):
     global graph_service
     global llm_service
     global entity_service
+    global relationship_service
     global document_service
 
     logger.info("Starting Graph RAG API")
@@ -58,11 +63,15 @@ async def lifespan(app: FastAPI):
     llm_service = LLMService()
 
     entity_service = EntityExtractionService()
+    relationship_service = (
+    RelationshipExtractionService()
+)
 
     document_service = DocumentService(
         vector_service=vector_service,
         graph_service=graph_service,
-        entity_service=entity_service
+        entity_service=entity_service,
+        relationship_service=relationship_service
     )
 
     initialize_document_service(

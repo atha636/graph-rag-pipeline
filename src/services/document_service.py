@@ -8,12 +8,16 @@ from loguru import logger
 from src.services.vector_service import VectorService
 from src.services.graph_service import GraphService
 from src.services.entity_service import EntityExtractionService
+from src.services.relationship_service import (
+    RelationshipExtractionService
+)
 
 
 class DocumentService:
     """
     Handles document parsing, chunking,
-    vector storage and graph generation.
+    vector storage and intelligent
+    graph generation.
     """
 
     def __init__(
@@ -21,12 +25,14 @@ class DocumentService:
         vector_service: VectorService,
         graph_service: GraphService,
         entity_service: EntityExtractionService,
+        relationship_service: RelationshipExtractionService,
         chunk_size: int = 500,
         chunk_overlap: int = 100
     ):
         self.vector_service = vector_service
         self.graph_service = graph_service
         self.entity_service = entity_service
+        self.relationship_service = relationship_service
 
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
@@ -67,7 +73,7 @@ class DocumentService:
         path: Path
     ) -> str:
         """
-        Extract text from PDF file.
+        Extract text from PDF.
         """
 
         logger.info(
@@ -91,7 +97,7 @@ class DocumentService:
         path: Path
     ) -> str:
         """
-        Extract text from DOCX file.
+        Extract text from DOCX.
         """
 
         logger.info(
@@ -128,7 +134,9 @@ class DocumentService:
             chunk = text[start:end].strip()
 
             if chunk:
-                chunks.append(chunk)
+                chunks.append(
+                    chunk
+                )
 
             start += (
                 self.chunk_size -
@@ -146,8 +154,7 @@ class DocumentService:
         file_path: str
     ) -> List[str]:
         """
-        Extract document text and
-        convert it into chunks.
+        Extract document and create chunks.
         """
 
         logger.info(
@@ -158,7 +165,9 @@ class DocumentService:
             file_path
         )
 
-        return self.chunk_text(text)
+        return self.chunk_text(
+            text
+        )
 
     def ingest_document(
         self,
@@ -181,38 +190,60 @@ class DocumentService:
 
         for chunk in chunks:
 
-            # Store chunk in Pinecone with metadata
-            vector_id = self.vector_service.upsert_document(
-                text=chunk,
-                metadata={
-                    "source": file_path,
-                    "document_type": Path(file_path).suffix
-                }
+            # Store chunk in Pinecone
+            vector_id = (
+                self.vector_service.upsert_document(
+                    text=chunk,
+                    metadata={
+                        "source": file_path,
+                        "document_type": (
+                            Path(file_path).suffix
+                        )
+                    }
+                )
             )
 
             vector_ids.append(
                 vector_id
             )
 
-            # Extract entities from chunk
-            entities = (
-                self.entity_service
-                .extract_entities(chunk)
+            # Extract relationships using LLM
+            relationships = (
+                self.relationship_service
+                .extract_relationships(
+                    chunk
+                )
             )
 
             logger.info(
-                f"Entities found: {entities}"
+                f"Relationships found: {relationships}"
             )
 
-            # Create graph relationships
-            for i in range(
-                len(entities) - 1
-            ):
-                self.graph_service.create_relationship(
-                    entities[i],
-                    "RELATED_TO",
-                    entities[i + 1]
+            # Store relationships in Neo4j
+            for relation in relationships:
+
+                source = relation.get(
+                    "source"
                 )
+
+                relationship = relation.get(
+                    "relationship"
+                )
+
+                target = relation.get(
+                    "target"
+                )
+
+                if (
+                    source and
+                    relationship and
+                    target
+                ):
+                    self.graph_service.create_relationship(
+                        source,
+                        relationship,
+                        target
+                    )
 
         logger.info(
             "Document ingestion completed"
