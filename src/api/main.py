@@ -17,23 +17,18 @@ from src.services.vector_service import VectorService
 from src.services.graph_service import GraphService
 from src.services.llm_service import LLMService
 from src.services.entity_service import EntityExtractionService
-from src.services.relationship_service import (
-    RelationshipExtractionService
-)
-from src.services.intent_service import (
-    IntentExtractionService
-)
+from src.services.relationship_service import RelationshipExtractionService
+from src.services.intent_service import IntentExtractionService
 from src.services.document_service import DocumentService
+from src.services.ranking_service import RankingService
 
 from src.api.upload import (
     router as upload_router,
     initialize_document_service
 )
 
-
 # Configure logger
 configure_logger()
-
 
 # Global services
 vector_service = None
@@ -42,6 +37,7 @@ llm_service = None
 entity_service = None
 relationship_service = None
 intent_service = None
+ranking_service = None
 document_service = None
 
 
@@ -50,30 +46,24 @@ async def lifespan(app: FastAPI):
     """
     Initialize all services at startup.
     """
-
     global vector_service
     global graph_service
     global llm_service
     global entity_service
     global relationship_service
     global intent_service
+    global ranking_service
     global document_service
 
     logger.info("Starting Graph RAG API")
 
     vector_service = VectorService()
-
     graph_service = GraphService()
-
     llm_service = LLMService()
-
     entity_service = EntityExtractionService()
-    relationship_service = (
-    RelationshipExtractionService()
-)
-    intent_service = (
-    IntentExtractionService()
-)
+    relationship_service = RelationshipExtractionService()
+    intent_service = IntentExtractionService()
+    ranking_service = RankingService()
 
     document_service = DocumentService(
         vector_service=vector_service,
@@ -82,9 +72,7 @@ async def lifespan(app: FastAPI):
         relationship_service=relationship_service
     )
 
-    initialize_document_service(
-        document_service
-    )
+    initialize_document_service(document_service)
 
     logger.info("All AI services initialized")
 
@@ -111,9 +99,7 @@ async def application_exception_handler(
     request: Request,
     exc: GraphRAGException
 ):
-    logger.error(
-        f"Application error: {exc}"
-    )
+    logger.error(f"Application error: {exc}")
 
     return JSONResponse(
         status_code=500,
@@ -135,20 +121,15 @@ async def health():
     "/api/v1/query",
     response_model=QueryResponse
 )
-async def query_graph_rag(
-    request: QueryRequest
-):
+async def query_graph_rag(request: QueryRequest):
     """
     Main Graph RAG endpoint.
     """
-
     start_time = time.time()
 
-    logger.info(
-        f"Received query: {request.query}"
-    )
+    logger.info(f"Received query: {request.query}")
 
-    # Start vector search in parallel
+    # Start vector search
     vector_task = asyncio.to_thread(
         vector_service.search,
         request.query
@@ -160,9 +141,7 @@ async def query_graph_rag(
         request.query
     )
 
-    logger.info(
-        f"Extracted intent: {intent}"
-    )
+    logger.info(f"Extracted intent: {intent}")
 
     # Extract entities
     entities = await asyncio.to_thread(
@@ -170,11 +149,9 @@ async def query_graph_rag(
         request.query
     )
 
-    logger.info(
-        f"Extracted entities: {entities}"
-    )
+    logger.info(f"Extracted entities: {entities}")
 
-    # Create graph search tasks with intent filter
+    # Graph search tasks
     graph_tasks = [
         asyncio.to_thread(
             graph_service.search_entities,
@@ -184,18 +161,15 @@ async def query_graph_rag(
         for entity in entities
     ]
 
-    # Run vector and graph searches together
+    # Run vector + graph searches together
     results = await asyncio.gather(
         vector_task,
         *graph_tasks
     )
 
-    # First result is vector search
     vector_results = results[0]
 
-    # Remaining results are graph searches
     graph_results = []
-
     for result in results[1:]:
         graph_results.extend(result)
 
@@ -212,13 +186,11 @@ async def query_graph_rag(
 
     # Build graph context
     graph_context = "\n".join(
-        f'{item["source"]} - '
-        f'{item["relationship"]} -> '
-        f'{item["target"]}'
+        f'{item["source"]} - {item["relationship"]} -> {item["target"]}'
         for item in graph_results
     )
 
-    # Generate final answer using LLM
+    # Generate final answer
     answer = await asyncio.to_thread(
         llm_service.generate_response,
         request.query,
@@ -226,32 +198,56 @@ async def query_graph_rag(
         graph_context
     )
 
-    # Collect sources
-    sources = []
+    # Collect raw sources
+    raw_sources = []
 
+    # Vector sources
     for item in vector_results:
-        sources.append(
-            Source(
-                source_type="vector",
-                content=item["text"]
-            )
+        raw_sources.append(
+            {
+                "source_type": "vector",
+                "content": item["text"]
+            }
         )
 
+    # Graph sources
     for item in graph_results:
-        sources.append(
-            Source(
-                source_type="graph",
-                content=(
+        raw_sources.append(
+            {
+                "source_type": "graph",
+                "content": (
                     f'{item["source"]} '
                     f'{item["relationship"]} '
                     f'{item["target"]}'
                 )
+            }
+        )
+
+    # Remove duplicates and rank sources
+    processed_sources = ranking_service.process_sources(
+        request.query,
+        raw_sources
+    )
+
+    # Keep top 5 sources
+    processed_sources = processed_sources[:5]
+
+    logger.info(
+        f"Final ranked sources: {len(processed_sources)}"
+    )
+
+    # Convert to response model
+    sources = []
+
+    for item in processed_sources:
+        sources.append(
+            Source(
+                source_type=item["source_type"],
+                content=item["content"]
             )
         )
 
-    latency = (
-        time.time() - start_time
-    ) * 1000
+    latency = (time.time() - start_time) * 1000
 
     logger.info(
         f"Query completed in {latency:.2f} ms"
