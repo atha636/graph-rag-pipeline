@@ -182,11 +182,21 @@ async def query_graph_rag(request: QueryRequest):
     raw_sources = []
 
     # Add vector results
+    # Carries document_name/type/id/uploaded_at/chunk_id/chunk_size/score
+    # straight from vector_service.search() so nothing gets lost before
+    # ranking and before building the final Source(...) objects below.
     for item in vector_results:
         raw_sources.append(
             {
                 "source_type": "vector",
-                "content": item["text"]
+                "content": item["text"],
+                "document_name": item.get("document_name"),
+                "document_type": item.get("document_type"),
+                "document_id": item.get("document_id"),
+                "uploaded_at": item.get("uploaded_at"),
+                "chunk_id": item.get("chunk_id"),
+                "chunk_size": item.get("chunk_size"),
+                "score": item.get("score"),
             }
         )
 
@@ -204,6 +214,9 @@ async def query_graph_rag(request: QueryRequest):
         )
 
     # Rank and remove duplicates
+    logger.info(
+    f"Raw sources before ranking: {raw_sources}"
+)
     processed_sources = ranking_service.process_sources(
         request.query,
         raw_sources
@@ -211,6 +224,9 @@ async def query_graph_rag(request: QueryRequest):
 
     # Keep best 5 sources
     processed_sources = processed_sources[:5]
+    logger.info(
+    f"Processed sources after ranking: {processed_sources}"
+)
 
     logger.info(
         f"Using {len(processed_sources)} ranked sources for LLM"
@@ -246,7 +262,39 @@ async def query_graph_rag(request: QueryRequest):
         sources.append(
             Source(
                 source_type=item["source_type"],
-                content=item["content"]
+                content=item["content"],
+
+                document_name=item.get(
+                    "document_name"
+                ),
+
+                document_type=item.get(
+                    "document_type"
+                ),
+
+                document_id=item.get(
+                    "document_id"
+                ),
+
+                uploaded_at=item.get(
+                    "uploaded_at"
+                ),
+
+                chunk_id=item.get(
+                    "chunk_id"
+                ),
+
+                chunk_size=item.get(
+                    "chunk_size"
+                ),
+
+                score=item.get(
+                    "score"
+                ),
+
+                relevance_score=item.get(
+                    "relevance_score"
+                )
             )
         )
 

@@ -1,20 +1,10 @@
-from pinecone import Pinecone
-from src.core.config import settings
+from src.services.vector_service import VectorService
 
 
-client = Pinecone(
-    api_key=settings.PINECONE_API_KEY
+vector_service = VectorService()
+
+vector_service.clear_namespace()
+
+print(
+    "Pinecone namespace deleted successfully"
 )
-
-index = client.Index(
-    settings.PINECONE_INDEX_NAME
-)
-
-
-index.delete(
-    delete_all=True,
-    namespace=settings.PINECONE_NAMESPACE
-)
-
-
-print("✅ Pinecone namespace cleared")

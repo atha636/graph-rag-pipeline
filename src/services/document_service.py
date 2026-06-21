@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 from pypdf import PdfReader
 from docx import Document
@@ -171,15 +171,31 @@ class DocumentService:
 
     def ingest_document(
         self,
-        file_path: str
+        file_path: str,
+        original_filename: Optional[str] = None,
+        document_id: Optional[str] = None,
+        uploaded_at: Optional[str] = None
     ) -> dict:
         """
         Process document and store data
         into Pinecone and Neo4j.
+
+        original_filename / document_id / uploaded_at are optional
+        so this method still works if called directly (e.g. from a
+        script) without going through the /upload endpoint. When not
+        provided, document_name falls back to the file_path's name,
+        same as before.
         """
 
         logger.info(
             f"Starting ingestion: {file_path}"
+        )
+
+        # Prefer the real uploaded filename over the temp file's
+        # randomly generated name (e.g. tmpjslmfo7m.txt).
+        document_name = (
+            original_filename
+            or Path(file_path).name
         )
 
         chunks = self.process_document(
@@ -188,17 +204,23 @@ class DocumentService:
 
         vector_ids = []
 
-        for chunk in chunks:
+        for index, chunk in enumerate(chunks):
 
-            # Store chunk in Pinecone
+            # Store chunk in Pinecone with metadata
             vector_id = (
                 self.vector_service.upsert_document(
                     text=chunk,
                     metadata={
-                        "source": file_path,
+
+                        "document_name": document_name,
+                        "document_path": file_path,
                         "document_type": (
                             Path(file_path).suffix
-                        )
+                        ),
+                        "document_id": document_id,
+                        "uploaded_at": uploaded_at,
+                        "chunk_id": index,
+                        "chunk_size": len(chunk)
                     }
                 )
             )
@@ -251,6 +273,9 @@ class DocumentService:
 
         return {
             "status": "success",
+            "document_id": document_id,
+            "document_name": document_name,
+            "uploaded_at": uploaded_at,
             "chunks_processed": len(chunks),
             "vectors_created": len(vector_ids)
         }

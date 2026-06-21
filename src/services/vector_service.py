@@ -152,15 +152,46 @@ class VectorService:
             matches = []
 
             for match in result.matches:
+
+                logger.info(
+                    f"Pinecone metadata: {match.metadata}"
+                )
+
                 matches.append(
                     {
                         "id": match.id,
                         "score": match.score,
-                        "text": (
-                            match.metadata.get(
-                                "text",
-                                ""
-                            )
+                        "text": match.metadata.get(
+                            "text",
+                            ""
+                        ),
+                        "document_name": match.metadata.get(
+                            "document_name",
+                            "Unknown"
+                        ),
+                        "document_path": match.metadata.get(
+                            "document_path",
+                            ""
+                        ),
+                        "document_type": match.metadata.get(
+                            "document_type",
+                            ""
+                        ),
+                        "document_id": match.metadata.get(
+                            "document_id",
+                            ""
+                        ),
+                        "uploaded_at": match.metadata.get(
+                            "uploaded_at",
+                            ""
+                        ),
+                        "chunk_id": match.metadata.get(
+                            "chunk_id",
+                            -1
+                        ),
+                        "chunk_size": match.metadata.get(
+                            "chunk_size",
+                            0
                         )
                     }
                 )
@@ -179,3 +210,13 @@ class VectorService:
             raise VectorDatabaseError(
                 str(error)
             ) from error
+
+
+    def clear_namespace(self):
+        self.index.delete(
+            delete_all=True,
+            namespace=settings.PINECONE_NAMESPACE
+        )
+        logger.info(
+            "Pinecone namespace cleared"
+        )

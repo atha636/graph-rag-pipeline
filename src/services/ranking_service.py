@@ -82,4 +82,10 @@ class RankingService:
 
         unique_sources = self.remove_duplicates(sources)
 
-        return self.rank_sources(query, unique_sources)
+        ranked_sources = self.rank_sources(query, unique_sources)
+
+        logger.info(
+            f"Processed {len(unique_sources)} unique sources"
+        )
+
+        return ranked_sources
