@@ -17,10 +17,14 @@ class GraphService:
             logger.info(
                 "Initializing Neo4j Graph Service..."
             )
-            
-            logger.info(f"NEO4J_URI: {settings.NEO4J_URI}")
-            logger.info(f"NEO4J_USERNAME: {settings.NEO4J_USERNAME}")
-            
+
+            logger.info(
+                f"NEO4J_URI: {settings.NEO4J_URI}"
+            )
+            logger.info(
+                f"NEO4J_USERNAME: {settings.NEO4J_USERNAME}"
+            )
+
             self.driver = GraphDatabase.driver(
                 settings.NEO4J_URI,
                 auth=(
@@ -52,7 +56,7 @@ class GraphService:
         target: str
     ) -> None:
         """
-        Creates a relationship between entities.
+        Create relationship between entities.
         """
 
         try:
@@ -88,21 +92,23 @@ class GraphService:
         entity_name: str
     ) -> List[Dict[str, Any]]:
         """
-        Fetch connected entities.
+        Search entity relationships from Neo4j.
         """
 
         try:
             query = """
-            MATCH (a:Entity)-[r]-(b:Entity)
-WHERE 
-    toLower(a.name) CONTAINS toLower($name)
-    OR
-    toLower(b.name) CONTAINS toLower($name)
+            MATCH (source:Entity)-[r]->(target:Entity)
+            WHERE 
+                toLower(source.name) CONTAINS toLower($name)
+                OR
+                toLower(target.name) CONTAINS toLower($name)
 
-RETURN DISTINCT
-    startNode(r).name AS source,
-    type(r) AS relationship,
-    endNode(r).name AS target
+            RETURN
+                source.name AS source,
+                type(r) AS relationship,
+                target.name AS target
+
+            ORDER BY relationship
             """
 
             with self.driver.session() as session:
@@ -111,16 +117,16 @@ RETURN DISTINCT
                     name=entity_name
                 )
 
-                records = [
+                relationships = [
                     record.data()
                     for record in result
                 ]
 
             logger.info(
-                f"Found {len(records)} graph relationships"
+                f"Found {len(relationships)} relationships for {entity_name}"
             )
 
-            return records
+            return relationships
 
         except Exception as error:
             logger.exception(
@@ -139,6 +145,7 @@ RETURN DISTINCT
 
         if self.driver:
             self.driver.close()
+
             logger.info(
                 "Neo4j connection closed"
             )
