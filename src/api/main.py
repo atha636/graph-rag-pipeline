@@ -178,30 +178,10 @@ async def query_graph_rag(request: QueryRequest):
         f"Graph results: {len(graph_results)}"
     )
 
-    # Build vector context
-    vector_context = "\n".join(
-        item["text"]
-        for item in vector_results
-    )
-
-    # Build graph context
-    graph_context = "\n".join(
-        f'{item["source"]} - {item["relationship"]} -> {item["target"]}'
-        for item in graph_results
-    )
-
-    # Generate final answer
-    answer = await asyncio.to_thread(
-        llm_service.generate_response,
-        request.query,
-        vector_context,
-        graph_context
-    )
-
     # Collect raw sources
     raw_sources = []
 
-    # Vector sources
+    # Add vector results
     for item in vector_results:
         raw_sources.append(
             {
@@ -210,7 +190,7 @@ async def query_graph_rag(request: QueryRequest):
             }
         )
 
-    # Graph sources
+    # Add graph results
     for item in graph_results:
         raw_sources.append(
             {
@@ -223,20 +203,43 @@ async def query_graph_rag(request: QueryRequest):
             }
         )
 
-    # Remove duplicates and rank sources
+    # Rank and remove duplicates
     processed_sources = ranking_service.process_sources(
         request.query,
         raw_sources
     )
 
-    # Keep top 5 sources
+    # Keep best 5 sources
     processed_sources = processed_sources[:5]
 
     logger.info(
-        f"Final ranked sources: {len(processed_sources)}"
+        f"Using {len(processed_sources)} ranked sources for LLM"
     )
 
-    # Convert to response model
+    # Build clean context from ranked sources only
+    vector_context = "\n".join(
+        item["content"]
+        for item in processed_sources
+        if item["source_type"] == "vector"
+    )
+
+    graph_context = "\n".join(
+        item["content"]
+        for item in processed_sources
+        if item["source_type"] == "graph"
+    )
+
+    logger.info("Built clean ranked context")
+
+    # Generate final answer using only the ranked context
+    answer = await asyncio.to_thread(
+        llm_service.generate_response,
+        request.query,
+        vector_context,
+        graph_context
+    )
+
+    # Convert ranked sources to response model
     sources = []
 
     for item in processed_sources:
