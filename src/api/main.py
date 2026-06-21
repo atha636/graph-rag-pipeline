@@ -20,6 +20,9 @@ from src.services.entity_service import EntityExtractionService
 from src.services.relationship_service import (
     RelationshipExtractionService
 )
+from src.services.intent_service import (
+    IntentExtractionService
+)
 from src.services.document_service import DocumentService
 
 from src.api.upload import (
@@ -38,6 +41,7 @@ graph_service = None
 llm_service = None
 entity_service = None
 relationship_service = None
+intent_service = None
 document_service = None
 
 
@@ -52,6 +56,7 @@ async def lifespan(app: FastAPI):
     global llm_service
     global entity_service
     global relationship_service
+    global intent_service
     global document_service
 
     logger.info("Starting Graph RAG API")
@@ -65,6 +70,9 @@ async def lifespan(app: FastAPI):
     entity_service = EntityExtractionService()
     relationship_service = (
     RelationshipExtractionService()
+)
+    intent_service = (
+    IntentExtractionService()
 )
 
     document_service = DocumentService(
@@ -140,10 +148,20 @@ async def query_graph_rag(
         f"Received query: {request.query}"
     )
 
-    # Start vector search
+    # Start vector search in parallel
     vector_task = asyncio.to_thread(
         vector_service.search,
         request.query
+    )
+
+    # Extract intent
+    intent = await asyncio.to_thread(
+        intent_service.extract_intent,
+        request.query
+    )
+
+    logger.info(
+        f"Extracted intent: {intent}"
     )
 
     # Extract entities
@@ -156,23 +174,26 @@ async def query_graph_rag(
         f"Extracted entities: {entities}"
     )
 
-    # Create graph tasks
+    # Create graph search tasks with intent filter
     graph_tasks = [
         asyncio.to_thread(
             graph_service.search_entities,
-            entity
+            entity,
+            intent
         )
         for entity in entities
     ]
 
-    # Execute searches concurrently
+    # Run vector and graph searches together
     results = await asyncio.gather(
         vector_task,
         *graph_tasks
     )
 
+    # First result is vector search
     vector_results = results[0]
 
+    # Remaining results are graph searches
     graph_results = []
 
     for result in results[1:]:
@@ -197,7 +218,7 @@ async def query_graph_rag(
         for item in graph_results
     )
 
-    # Generate final response
+    # Generate final answer using LLM
     answer = await asyncio.to_thread(
         llm_service.generate_response,
         request.query,
@@ -205,6 +226,7 @@ async def query_graph_rag(
         graph_context
     )
 
+    # Collect sources
     sources = []
 
     for item in vector_results:
@@ -227,7 +249,9 @@ async def query_graph_rag(
             )
         )
 
-    latency = (time.time() - start_time) * 1000
+    latency = (
+        time.time() - start_time
+    ) * 1000
 
     logger.info(
         f"Query completed in {latency:.2f} ms"
