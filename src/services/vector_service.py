@@ -149,13 +149,25 @@ class VectorService:
                 namespace=settings.PINECONE_NAMESPACE
             )
 
+            # Diagnostic: log every raw Pinecone result BEFORE any
+            # ranking or filtering touches them. If tesla_report.txt
+            # doesn't appear here, the data isn't in Pinecone and the
+            # fix is to clear + re-upload. If it appears here but not
+            # in the final response, the bug is in ranking/dedup.
+            logger.info(
+                f"Pinecone raw results ({len(result.matches)} matches):"
+            )
+            for i, match in enumerate(result.matches):
+                logger.info(
+                    f"  [{i}] score={match.score:.4f} | "
+                    f"doc={match.metadata.get('document_name', '?')} | "
+                    f"chunk={match.metadata.get('chunk_id', '?')} | "
+                    f"id={match.id}"
+                )
+
             matches = []
 
             for match in result.matches:
-
-                logger.info(
-                    f"Pinecone metadata: {match.metadata}"
-                )
 
                 matches.append(
                     {
