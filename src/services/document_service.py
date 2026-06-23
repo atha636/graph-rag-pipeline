@@ -8,16 +8,13 @@ from loguru import logger
 from src.services.vector_service import VectorService
 from src.services.graph_service import GraphService
 from src.services.entity_service import EntityExtractionService
-from src.services.relationship_service import (
-    RelationshipExtractionService
-)
+from src.services.relationship_service import RelationshipExtractionService
 
 
 class DocumentService:
     """
-    Handles document parsing, chunking,
-    vector storage and intelligent
-    graph generation.
+    Handles document parsing, chunking, vector storage,
+    and knowledge graph construction.
     """
 
     def __init__(
@@ -27,255 +24,147 @@ class DocumentService:
         entity_service: EntityExtractionService,
         relationship_service: RelationshipExtractionService,
         chunk_size: int = 500,
-        chunk_overlap: int = 100
+        chunk_overlap: int = 100,
     ):
         self.vector_service = vector_service
         self.graph_service = graph_service
         self.entity_service = entity_service
         self.relationship_service = relationship_service
-
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
 
-        logger.info(
-            "Document Service initialized"
-        )
+        logger.info("Document Service initialized")
 
-    def extract_text(
-        self,
-        file_path: str
-    ) -> str:
-        """
-        Extract text from supported documents.
-        """
+    # ------------------------------------------------------------------
+    # Text extraction
+    # ------------------------------------------------------------------
 
+    def extract_text(self, file_path: str) -> str:
         path = Path(file_path)
+        ext  = path.suffix.lower()
 
-        extension = path.suffix.lower()
-
-        if extension == ".pdf":
+        if ext == ".pdf":
             return self._read_pdf(path)
-
-        elif extension == ".docx":
+        if ext == ".docx":
             return self._read_docx(path)
+        if ext == ".txt":
+            return path.read_text(encoding="utf-8")
 
-        elif extension == ".txt":
-            return path.read_text(
-                encoding="utf-8"
-            )
+        raise ValueError(f"Unsupported file type: {ext}")
 
-        raise ValueError(
-            f"Unsupported file type: {extension}"
-        )
-
-    def _read_pdf(
-        self,
-        path: Path
-    ) -> str:
-        """
-        Extract text from PDF.
-        """
-
-        logger.info(
-            f"Reading PDF: {path.name}"
-        )
-
+    def _read_pdf(self, path: Path) -> str:
+        logger.info(f"Reading PDF: {path.name}")
         reader = PdfReader(path)
-
-        text = ""
-
-        for page in reader.pages:
-            page_text = page.extract_text()
-
-            if page_text:
-                text += page_text + "\n"
-
-        return text
-
-    def _read_docx(
-        self,
-        path: Path
-    ) -> str:
-        """
-        Extract text from DOCX.
-        """
-
-        logger.info(
-            f"Reading DOCX: {path.name}"
+        return "".join(
+            page.extract_text() + "\n"
+            for page in reader.pages
+            if page.extract_text()
         )
 
-        document = Document(path)
+    def _read_docx(self, path: Path) -> str:
+        logger.info(f"Reading DOCX: {path.name}")
+        doc = Document(path)
+        return "\n".join(p.text for p in doc.paragraphs)
 
-        return "\n".join(
-            paragraph.text
-            for paragraph in document.paragraphs
-        )
+    # ------------------------------------------------------------------
+    # Chunking
+    # ------------------------------------------------------------------
 
-    def chunk_text(
-        self,
-        text: str
-    ) -> List[str]:
-        """
-        Split text into overlapping chunks.
-        """
-
-        logger.info(
-            "Starting text chunking"
-        )
-
+    def chunk_text(self, text: str) -> List[str]:
+        logger.info("Starting text chunking")
         chunks = []
-
-        start = 0
+        start  = 0
 
         while start < len(text):
-
-            end = start + self.chunk_size
-
-            chunk = text[start:end].strip()
-
+            chunk = text[start: start + self.chunk_size].strip()
             if chunk:
-                chunks.append(
-                    chunk
-                )
+                chunks.append(chunk)
+            start += self.chunk_size - self.chunk_overlap
 
-            start += (
-                self.chunk_size -
-                self.chunk_overlap
-            )
-
-        logger.info(
-            f"Created {len(chunks)} chunks"
-        )
-
+        logger.info(f"Created {len(chunks)} chunks")
         return chunks
 
-    def process_document(
-        self,
-        file_path: str
-    ) -> List[str]:
-        """
-        Extract document and create chunks.
-        """
-
-        logger.info(
-            f"Processing document: {file_path}"
-        )
-
-        text = self.extract_text(
-            file_path
-        )
-
-        return self.chunk_text(
-            text
-        )
+    # ------------------------------------------------------------------
+    # Ingestion pipeline
+    # ------------------------------------------------------------------
 
     def ingest_document(
         self,
         file_path: str,
         original_filename: Optional[str] = None,
         document_id: Optional[str] = None,
-        uploaded_at: Optional[str] = None
+        uploaded_at: Optional[str] = None,
     ) -> dict:
         """
-        Process document and store data
-        into Pinecone and Neo4j.
-
-        original_filename / document_id / uploaded_at are optional
-        so this method still works if called directly (e.g. from a
-        script) without going through the /upload endpoint. When not
-        provided, document_name falls back to the file_path's name,
-        same as before.
+        Full ingestion pipeline:
+          1. Extract text from file.
+          2. Split into overlapping chunks.
+          3. Embed + store each chunk in Pinecone.
+          4. Extract relationships from each chunk.
+          5. Store relationships in Neo4j.
         """
 
-        logger.info(
-            f"Starting ingestion: {file_path}"
-        )
+        logger.info(f"Starting ingestion: {file_path}")
 
-        # Prefer the real uploaded filename over the temp file's
-        # randomly generated name (e.g. tmpjslmfo7m.txt).
-        document_name = (
-            original_filename
-            or Path(file_path).name
-        )
+        document_name = original_filename or Path(file_path).name
+        chunks = self.chunk_text(self.extract_text(file_path))
 
-        chunks = self.process_document(
-            file_path
-        )
-
-        vector_ids = []
+        vector_ids:            List[str] = []
+        total_relationships:   int       = 0
 
         for index, chunk in enumerate(chunks):
 
-            # Store chunk in Pinecone with metadata
-            vector_id = (
-                self.vector_service.upsert_document(
-                    text=chunk,
-                    metadata={
-
-                        "document_name": document_name,
-                        "document_path": file_path,
-                        "document_type": (
-                            Path(file_path).suffix
-                        ),
-                        "document_id": document_id,
-                        "uploaded_at": uploaded_at,
-                        "chunk_id": index,
-                        "chunk_size": len(chunk)
-                    }
-                )
+            # --- Pinecone ---
+            vector_id = self.vector_service.upsert_document(
+                text=chunk,
+                metadata={
+                    "document_name": document_name,
+                    "document_path": file_path,
+                    "document_type": Path(file_path).suffix,
+                    "document_id":   document_id,
+                    "uploaded_at":   uploaded_at,
+                    "chunk_id":      index,
+                    "chunk_size":    len(chunk),
+                },
             )
+            vector_ids.append(vector_id)
 
-            vector_ids.append(
-                vector_id
-            )
-
-            # Extract relationships using LLM
+            # --- Neo4j ---
             relationships = (
-                self.relationship_service
-                .extract_relationships(
-                    chunk
-                )
+                self.relationship_service.extract_relationships(chunk)
             )
 
             logger.info(
-                f"Relationships found: {relationships}"
+                f"Chunk {index}: {len(relationships)} relationships"
             )
 
-            # Store relationships in Neo4j
             for relation in relationships:
+                source       = relation.get("source", "").strip()
+                relationship = relation.get("relationship", "").strip()
+                target       = relation.get("target", "").strip()
 
-                source = relation.get(
-                    "source"
-                )
-
-                relationship = relation.get(
-                    "relationship"
-                )
-
-                target = relation.get(
-                    "target"
-                )
-
-                if (
-                    source and
-                    relationship and
-                    target
-                ):
+                if source and relationship and target:
+                    # FIX: old code passed `relationship` as the third
+                    # positional argument, but GraphService.create_relationship()
+                    # declared its second parameter as `relation` — the names
+                    # never matched when called as keyword arguments, causing
+                    # silent failures where Neo4j received an empty string.
+                    # Unified parameter name to `relationship` in GraphService.
                     self.graph_service.create_relationship(
-                        source,
-                        relationship,
-                        target
+                        source=source,
+                        relationship=relationship,
+                        target=target,
                     )
+                    total_relationships += 1
 
-        logger.info(
-            "Document ingestion completed"
-        )
+        logger.info("Document ingestion completed")
 
         return {
-            "status": "success",
-            "document_id": document_id,
-            "document_name": document_name,
-            "uploaded_at": uploaded_at,
-            "chunks_processed": len(chunks),
-            "vectors_created": len(vector_ids)
+            "status":              "success",
+            "document_id":         document_id,
+            "document_name":       document_name,
+            "uploaded_at":         uploaded_at,
+            "chunks_processed":    len(chunks),
+            "vectors_created":     len(vector_ids),
+            "relationships_added": total_relationships,
         }

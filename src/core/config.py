@@ -29,7 +29,11 @@ class Settings(BaseSettings):
 
     # AI Models
     LLM_MODEL: str = "llama3-8b-8192"
-    EMBEDDING_MODEL: str = "bge-large-en"
+
+    # FIX: "bge-large-en" is not a valid HuggingFace model id.
+    # The correct id is "BAAI/bge-large-en-v1.5".
+    # Using the wrong name causes SentenceTransformer to crash on startup.
+    EMBEDDING_MODEL: str = "BAAI/bge-large-en-v1.5"
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -41,12 +45,7 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    """
-    Creates a single settings object and
-    reuses it during the application lifetime.
-    """
     return Settings()
 
 
-# Global settings object
 settings = get_settings()

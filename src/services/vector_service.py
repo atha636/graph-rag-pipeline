@@ -1,4 +1,4 @@
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from uuid import uuid4
 
 from pinecone import Pinecone
@@ -11,136 +11,81 @@ from src.core.exceptions import VectorDatabaseError
 
 class VectorService:
     """
-    Handles embedding generation and
-    Pinecone vector operations.
+    Handles embedding generation and Pinecone vector operations.
+
+    Accepts an optional pre-loaded SentenceTransformer so the model
+    is not loaded twice when RankingService also needs it.
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        embedding_model: Optional[SentenceTransformer] = None
+    ) -> None:
         try:
-            logger.info(
-                "Initializing Vector Service..."
-            )
+            logger.info("Initializing Vector Service...")
 
-            # Load embedding model
-            self.model = SentenceTransformer(
-                settings.EMBEDDING_MODEL
-            )
+            # FIX: accept a shared model instance to avoid loading
+            # SentenceTransformer twice (once here, once in RankingService).
+            # If none is provided we load our own — backwards compatible.
+            if embedding_model is not None:
+                self.model = embedding_model
+                logger.info("Using shared embedding model")
+            else:
+                self.model = SentenceTransformer(settings.EMBEDDING_MODEL)
+                logger.info("Embedding model loaded successfully")
 
-            logger.info(
-                "Embedding model loaded successfully"
-            )
+            client = Pinecone(api_key=settings.PINECONE_API_KEY)
+            self.index = client.Index(settings.PINECONE_INDEX_NAME)
 
-            # Initialize Pinecone
-            client = Pinecone(
-                api_key=settings.PINECONE_API_KEY
-            )
-
-            self.index = client.Index(
-                settings.PINECONE_INDEX_NAME
-            )
-
-            logger.info(
-                "Pinecone connection established"
-            )
+            logger.info("Pinecone connection established")
 
         except Exception as error:
-            logger.exception(
-                "Failed to initialize Vector Service"
-            )
+            logger.exception("Failed to initialize Vector Service")
+            raise VectorDatabaseError(str(error)) from error
 
-            raise VectorDatabaseError(
-                str(error)
-            ) from error
-
-
-    def generate_embedding(
-        self,
-        text: str
-    ) -> List[float]:
-        """
-        Convert text into vector embedding.
-        """
-
+    def generate_embedding(self, text: str) -> List[float]:
         try:
-            embedding = (
-                self.model.encode(
-                    text,
-                    normalize_embeddings=True
-                )
+            return (
+                self.model
+                .encode(text, normalize_embeddings=True)
                 .tolist()
             )
-
-            return embedding
-
         except Exception as error:
-            logger.exception(
-                "Embedding generation failed"
-            )
-
-            raise VectorDatabaseError(
-                str(error)
-            ) from error
-
+            logger.exception("Embedding generation failed")
+            raise VectorDatabaseError(str(error)) from error
 
     def upsert_document(
         self,
         text: str,
         metadata: Dict[str, Any]
     ) -> str:
-        """
-        Store document vector in Pinecone.
-        """
-
         try:
             vector_id = str(uuid4())
-
-            embedding = (
-                self.generate_embedding(text)
-            )
+            embedding = self.generate_embedding(text)
 
             self.index.upsert(
-                vectors=[
-                    {
-                        "id": vector_id,
-                        "values": embedding,
-                        "metadata": {
-                            "text": text,
-                            **metadata
-                        }
-                    }
-                ],
+                vectors=[{
+                    "id":     vector_id,
+                    "values": embedding,
+                    "metadata": {"text": text, **metadata}
+                }],
                 namespace=settings.PINECONE_NAMESPACE
             )
 
-            logger.info(
-                f"Document stored: {vector_id}"
-            )
-
+            logger.info(f"Document stored: {vector_id}")
             return vector_id
 
         except Exception as error:
-            logger.exception(
-                "Vector upsert failed"
-            )
-
-            raise VectorDatabaseError(
-                str(error)
-            ) from error
-
+            logger.exception("Vector upsert failed")
+            raise VectorDatabaseError(str(error)) from error
 
     def search(
         self,
         query: str,
         top_k: int = 5
     ) -> List[Dict[str, Any]]:
-        """
-        Search similar documents.
-        """
-
         try:
-            query_vector = (
-                self.generate_embedding(query)
-            )
+            query_vector = self.generate_embedding(query)
 
             result = self.index.query(
                 vector=query_vector,
@@ -149,11 +94,6 @@ class VectorService:
                 namespace=settings.PINECONE_NAMESPACE
             )
 
-            # Diagnostic: log every raw Pinecone result BEFORE any
-            # ranking or filtering touches them. If tesla_report.txt
-            # doesn't appear here, the data isn't in Pinecone and the
-            # fix is to clear + re-upload. If it appears here but not
-            # in the final response, the bug is in ranking/dedup.
             logger.info(
                 f"Pinecone raw results ({len(result.matches)} matches):"
             )
@@ -161,74 +101,34 @@ class VectorService:
                 logger.info(
                     f"  [{i}] score={match.score:.4f} | "
                     f"doc={match.metadata.get('document_name', '?')} | "
-                    f"chunk={match.metadata.get('chunk_id', '?')} | "
-                    f"id={match.id}"
+                    f"chunk={match.metadata.get('chunk_id', '?')}"
                 )
 
             matches = []
-
             for match in result.matches:
+                matches.append({
+                    "id":            match.id,
+                    "score":         match.score,
+                    "text":          match.metadata.get("text", ""),
+                    "document_name": match.metadata.get("document_name", "Unknown"),
+                    "document_path": match.metadata.get("document_path", ""),
+                    "document_type": match.metadata.get("document_type", ""),
+                    "document_id":   match.metadata.get("document_id", ""),
+                    "uploaded_at":   match.metadata.get("uploaded_at", ""),
+                    "chunk_id":      match.metadata.get("chunk_id", -1),
+                    "chunk_size":    match.metadata.get("chunk_size", 0),
+                })
 
-                matches.append(
-                    {
-                        "id": match.id,
-                        "score": match.score,
-                        "text": match.metadata.get(
-                            "text",
-                            ""
-                        ),
-                        "document_name": match.metadata.get(
-                            "document_name",
-                            "Unknown"
-                        ),
-                        "document_path": match.metadata.get(
-                            "document_path",
-                            ""
-                        ),
-                        "document_type": match.metadata.get(
-                            "document_type",
-                            ""
-                        ),
-                        "document_id": match.metadata.get(
-                            "document_id",
-                            ""
-                        ),
-                        "uploaded_at": match.metadata.get(
-                            "uploaded_at",
-                            ""
-                        ),
-                        "chunk_id": match.metadata.get(
-                            "chunk_id",
-                            -1
-                        ),
-                        "chunk_size": match.metadata.get(
-                            "chunk_size",
-                            0
-                        )
-                    }
-                )
-
-            logger.info(
-                f"Retrieved {len(matches)} vectors"
-            )
-
+            logger.info(f"Retrieved {len(matches)} vectors")
             return matches
 
         except Exception as error:
-            logger.exception(
-                "Vector search failed"
-            )
+            logger.exception("Vector search failed")
+            raise VectorDatabaseError(str(error)) from error
 
-            raise VectorDatabaseError(
-                str(error)
-            ) from error
-
-
-    def clear_namespace(self):
+    def clear_namespace(self) -> None:
         self.index.delete(
             delete_all=True,
             namespace=settings.PINECONE_NAMESPACE
         )
-        logger.info(
-            "Pinecone namespace cleared"
-        )
+        logger.info("Pinecone namespace cleared")
