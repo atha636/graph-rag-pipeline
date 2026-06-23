@@ -2,21 +2,21 @@ export interface Document {
   id: string;
   name: string;
   type: 'pdf' | 'docx' | 'txt';
-  size?: number;
   uploadedAt?: string;
-  chunks?: number;
 }
 
+// Matches your backend Source model exactly
 export interface Source {
-  type: 'vector' | 'graph';
-  document_name: string;
-  document_type: string;
-  chunk_index?: number;
-  similarity_score?: number;
+  source_type: 'vector' | 'graph';
+  content: string;
+  document_name?: string;
+  document_type?: string;
+  document_id?: string;
+  uploaded_at?: string;
+  chunk_id?: string;
+  chunk_size?: number;
+  score?: number;
   relevance_score?: number;
-  content?: string;
-  relationship?: string;
-  entity?: string;
 }
 
 export interface Message {
@@ -24,31 +24,37 @@ export interface Message {
   role: 'user' | 'assistant';
   content: string;
   sources?: Source[];
-  sourceCount?: number;
+  documents?: string[];
   timestamp: Date;
   isStreaming?: boolean;
 }
 
+// POST /api/v1/query
 export interface QueryRequest {
   query: string;
-  top_k?: number;
 }
 
+// matches QueryResponse from your backend
 export interface QueryResponse {
   answer: string;
+  documents: string[];
   sources: Source[];
-  source_count: number;
-  intent?: string;
-  entities?: string[];
+  latency_ms: number;
+}
+
+// POST /api/v1/upload response
+export interface UploadResult {
+  chunks_created?: number;
+  entities_extracted?: number;
+  relationships_created?: number;
+  [key: string]: unknown;
 }
 
 export interface UploadResponse {
-  success: boolean;
+  filename: string;
   document_id: string;
-  document_name: string;
-  chunks_created: number;
-  entities_extracted: number;
-  relationships_created: number;
+  uploaded_at: string;
+  result: UploadResult;
 }
 
 export interface GraphNode {

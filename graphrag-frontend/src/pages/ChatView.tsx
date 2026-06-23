@@ -1,10 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Sparkles, RotateCcw, GitBranch } from 'lucide-react';
+import { Send, Sparkles, RotateCcw, GitBranch, Clock } from 'lucide-react';
 import { MessageBubble } from '../components/MessageBubble';
 import { queryAPI } from '../services/api';
 import type { Message } from '../types';
 
-const WELCOME_SUGGESTIONS = [
+const SUGGESTIONS = [
   'Who founded SpaceX?',
   'What is Elon Musk known for?',
   'Summarize the Tesla report',
@@ -15,6 +15,7 @@ export const ChatView: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [lastLatency, setLastLatency] = useState<number | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -32,8 +33,9 @@ export const ChatView: React.FC = () => {
       timestamp: new Date(),
     };
 
+    const aiMsgId = (Date.now() + 1).toString();
     const aiMsg: Message = {
-      id: (Date.now() + 1).toString(),
+      id: aiMsgId,
       role: 'assistant',
       content: '',
       timestamp: new Date(),
@@ -45,16 +47,19 @@ export const ChatView: React.FC = () => {
     setLoading(true);
 
     try {
+      // POST /api/v1/query
       const response = await queryAPI({ query: text.trim() });
+
+      setLastLatency(response.latency_ms);
 
       setMessages((prev) =>
         prev.map((m) =>
-          m.id === aiMsg.id
+          m.id === aiMsgId
             ? {
                 ...m,
                 content: response.answer,
                 sources: response.sources,
-                sourceCount: response.source_count,
+                documents: response.documents,
                 isStreaming: false,
               }
             : m
@@ -63,10 +68,11 @@ export const ChatView: React.FC = () => {
     } catch (err) {
       setMessages((prev) =>
         prev.map((m) =>
-          m.id === aiMsg.id
+          m.id === aiMsgId
             ? {
                 ...m,
-                content: 'Sorry, there was an error connecting to the backend. Make sure your FastAPI server is running on port 8000.',
+                content:
+                  '❌ Could not reach the backend.\n\nMake sure your FastAPI server is running:\n```\nuvicorn src.api.main:app --reload --port 8000\n```',
                 isStreaming: false,
               }
             : m
@@ -85,11 +91,6 @@ export const ChatView: React.FC = () => {
     }
   };
 
-  const handleReset = () => {
-    setMessages([]);
-    setInput('');
-  };
-
   const isEmpty = messages.length === 0;
 
   return (
@@ -97,20 +98,26 @@ export const ChatView: React.FC = () => {
       {/* Header */}
       <div style={styles.header}>
         <div style={styles.headerLeft}>
-          <div style={styles.headerIcon}>
-            <Sparkles size={15} color="var(--accent)" />
-          </div>
+          <div style={styles.headerIcon}><Sparkles size={15} color="var(--accent)" /></div>
           <div>
             <h2 style={styles.headerTitle}>Ask AI</h2>
-            <p style={styles.headerSub}>Powered by Neo4j + Pinecone + Groq</p>
+            <p style={styles.headerSub}>Groq LLM · Neo4j · Pinecone</p>
           </div>
         </div>
-        {!isEmpty && (
-          <button style={styles.resetBtn} onClick={handleReset} title="New conversation">
-            <RotateCcw size={14} />
-            <span>New chat</span>
-          </button>
-        )}
+        <div style={styles.headerRight}>
+          {lastLatency != null && (
+            <div style={styles.latency}>
+              <Clock size={11} color="var(--text-muted)" />
+              <span>{lastLatency.toFixed(0)} ms</span>
+            </div>
+          )}
+          {!isEmpty && (
+            <button style={styles.resetBtn} onClick={() => { setMessages([]); setLastLatency(null); }}>
+              <RotateCcw size={13} />
+              <span>New chat</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Messages */}
@@ -122,16 +129,12 @@ export const ChatView: React.FC = () => {
             </div>
             <h3 style={styles.welcomeTitle}>Graph RAG Assistant</h3>
             <p style={styles.welcomeSub}>
-              Ask questions about your uploaded documents. The AI searches across your
+              Ask questions about your uploaded documents. The system searches your
               knowledge graph and vector database to give accurate, cited answers.
             </p>
             <div style={styles.suggestions}>
-              {WELCOME_SUGGESTIONS.map((s) => (
-                <button
-                  key={s}
-                  style={styles.suggestion}
-                  onClick={() => sendMessage(s)}
-                >
+              {SUGGESTIONS.map((s) => (
+                <button key={s} style={styles.suggestion} onClick={() => sendMessage(s)}>
                   {s}
                 </button>
               ))}
@@ -139,9 +142,7 @@ export const ChatView: React.FC = () => {
           </div>
         ) : (
           <div style={styles.messageList}>
-            {messages.map((m) => (
-              <MessageBubble key={m.id} message={m} />
-            ))}
+            {messages.map((m) => <MessageBubble key={m.id} message={m} />)}
             <div ref={bottomRef} />
           </div>
         )}
@@ -172,170 +173,77 @@ export const ChatView: React.FC = () => {
             <Send size={16} color={input.trim() && !loading ? '#fff' : 'var(--text-muted)'} />
           </button>
         </div>
-        <p style={styles.hint}>Press Enter to send · Shift+Enter for new line</p>
+        <p style={styles.hint}>Enter to send · Shift+Enter for new line</p>
       </div>
     </div>
   );
 };
 
 const styles: Record<string, React.CSSProperties> = {
-  container: {
-    display: 'flex',
-    flexDirection: 'column',
-    height: '100%',
-    overflow: 'hidden',
-  },
+  container: { display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' },
   header: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: '18px 28px',
-    borderBottom: '1px solid var(--border)',
-    background: 'var(--bg-surface)',
-    flexShrink: 0,
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    padding: '18px 28px', borderBottom: '1px solid var(--border)',
+    background: 'var(--bg-surface)', flexShrink: 0,
   },
-  headerLeft: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 12,
-  },
+  headerLeft: { display: 'flex', alignItems: 'center', gap: 12 },
   headerIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    background: 'var(--accent-glow)',
-    border: '1px solid rgba(16,185,129,0.2)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: 36, height: 36, borderRadius: 10,
+    background: 'var(--accent-glow)', border: '1px solid rgba(16,185,129,0.2)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
   },
-  headerTitle: {
-    fontSize: 16,
-    fontWeight: 600,
-    color: 'var(--text-primary)',
-    lineHeight: 1.2,
-  },
-  headerSub: {
-    fontSize: 11.5,
-    color: 'var(--text-muted)',
-    marginTop: 1,
+  headerTitle: { fontSize: 16, fontWeight: 600, color: 'var(--text-primary)' },
+  headerSub: { fontSize: 11.5, color: 'var(--text-muted)', marginTop: 1 },
+  headerRight: { display: 'flex', alignItems: 'center', gap: 10 },
+  latency: {
+    display: 'flex', alignItems: 'center', gap: 4,
+    fontSize: 11, color: 'var(--text-muted)',
+    background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+    padding: '3px 8px', borderRadius: 6,
   },
   resetBtn: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 6,
-    padding: '6px 12px',
-    borderRadius: 'var(--radius-sm)',
-    background: 'var(--bg-elevated)',
-    border: '1px solid var(--border)',
-    color: 'var(--text-secondary)',
-    fontSize: 12,
-    fontWeight: 500,
-    cursor: 'pointer',
-    transition: 'background 0.15s',
+    display: 'flex', alignItems: 'center', gap: 6,
+    padding: '6px 12px', borderRadius: 'var(--radius-sm)',
+    background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+    color: 'var(--text-secondary)', fontSize: 12, fontWeight: 500, cursor: 'pointer',
   },
-  messages: {
-    flex: 1,
-    overflowY: 'auto',
-    padding: '0 28px',
-  },
+  messages: { flex: 1, overflowY: 'auto', padding: '0 28px' },
   welcome: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    height: '100%',
-    textAlign: 'center',
-    padding: '40px 20px',
-    gap: 16,
+    display: 'flex', flexDirection: 'column', alignItems: 'center',
+    justifyContent: 'center', height: '100%', textAlign: 'center',
+    padding: '40px 20px', gap: 16,
   },
   welcomeIcon: {
-    width: 64,
-    height: 64,
-    borderRadius: 16,
-    background: 'var(--accent-glow)',
-    border: '1px solid rgba(16,185,129,0.25)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: 64, height: 64, borderRadius: 16,
+    background: 'var(--accent-glow)', border: '1px solid rgba(16,185,129,0.25)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
   },
-  welcomeTitle: {
-    fontSize: 22,
-    fontWeight: 600,
-    color: 'var(--text-primary)',
-  },
-  welcomeSub: {
-    fontSize: 14,
-    color: 'var(--text-secondary)',
-    maxWidth: 420,
-    lineHeight: 1.7,
-  },
-  suggestions: {
-    display: 'flex',
-    flexWrap: 'wrap',
-    gap: 8,
-    justifyContent: 'center',
-    marginTop: 8,
-  },
+  welcomeTitle: { fontSize: 22, fontWeight: 600, color: 'var(--text-primary)' },
+  welcomeSub: { fontSize: 14, color: 'var(--text-secondary)', maxWidth: 420, lineHeight: 1.7 },
+  suggestions: { display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center', marginTop: 8 },
   suggestion: {
-    padding: '8px 16px',
-    borderRadius: 99,
-    background: 'var(--bg-elevated)',
-    border: '1px solid var(--border)',
-    color: 'var(--text-secondary)',
-    fontSize: 13,
-    cursor: 'pointer',
-    transition: 'all 0.15s',
+    padding: '8px 16px', borderRadius: 99, background: 'var(--bg-elevated)',
+    border: '1px solid var(--border)', color: 'var(--text-secondary)', fontSize: 13, cursor: 'pointer',
   },
-  messageList: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 20,
-    padding: '24px 0',
-  },
+  messageList: { display: 'flex', flexDirection: 'column', gap: 20, padding: '24px 0' },
   inputArea: {
-    padding: '16px 28px 20px',
-    borderTop: '1px solid var(--border)',
-    background: 'var(--bg-surface)',
-    flexShrink: 0,
+    padding: '16px 28px 20px', borderTop: '1px solid var(--border)',
+    background: 'var(--bg-surface)', flexShrink: 0,
   },
   inputWrapper: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 10,
-    background: 'var(--bg-elevated)',
-    border: '1px solid var(--border)',
-    borderRadius: 'var(--radius-lg)',
-    padding: '6px 6px 6px 16px',
-    transition: 'border-color 0.2s',
+    display: 'flex', alignItems: 'center', gap: 10,
+    background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+    borderRadius: 'var(--radius-lg)', padding: '6px 6px 6px 16px',
   },
   input: {
-    flex: 1,
-    background: 'none',
-    border: 'none',
-    outline: 'none',
-    color: 'var(--text-primary)',
-    fontSize: 14,
-    resize: 'none',
-    lineHeight: 1.6,
-    maxHeight: 120,
-    padding: '4px 0',
+    flex: 1, background: 'none', border: 'none', outline: 'none',
+    color: 'var(--text-primary)', fontSize: 14, resize: 'none',
+    lineHeight: 1.6, maxHeight: 120, padding: '4px 0',
   },
   sendBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    border: 'none',
-    transition: 'background 0.2s',
-    flexShrink: 0,
+    width: 36, height: 36, borderRadius: 10, display: 'flex',
+    alignItems: 'center', justifyContent: 'center', border: 'none',
+    transition: 'background 0.2s', flexShrink: 0,
   },
-  hint: {
-    fontSize: 11,
-    color: 'var(--text-faint)',
-    textAlign: 'center',
-    marginTop: 8,
-  },
+  hint: { fontSize: 11, color: 'var(--text-faint)', textAlign: 'center', marginTop: 8 },
 };

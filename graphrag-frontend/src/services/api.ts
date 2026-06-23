@@ -1,23 +1,25 @@
 import axios from 'axios';
-import type { QueryRequest, QueryResponse, UploadResponse, Document, GraphData } from '../types';
+import type { QueryRequest, QueryResponse, UploadResponse, GraphData } from '../types';
 
 const api = axios.create({
-  baseURL: '/api',
+  baseURL: '',          // vite proxy handles /api
   timeout: 60000,
 });
 
+// POST /api/v1/query
 export const queryAPI = async (request: QueryRequest): Promise<QueryResponse> => {
-  const { data } = await api.post<QueryResponse>('/query', request);
+  const { data } = await api.post<QueryResponse>('/api/v1/query', request);
   return data;
 };
 
+// POST /api/v1/upload
 export const uploadDocumentAPI = async (
   file: File,
   onProgress?: (pct: number) => void
 ): Promise<UploadResponse> => {
   const formData = new FormData();
   formData.append('file', file);
-  const { data } = await api.post<UploadResponse>('/upload', formData, {
+  const { data } = await api.post<UploadResponse>('/api/v1/upload', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
     onUploadProgress: (e) => {
       if (onProgress && e.total) {
@@ -28,25 +30,22 @@ export const uploadDocumentAPI = async (
   return data;
 };
 
-export const getDocumentsAPI = async (): Promise<Document[]> => {
-  const { data } = await api.get<Document[]>('/documents');
-  return data;
-};
-
-export const deleteDocumentAPI = async (docId: string): Promise<void> => {
-  await api.delete(`/documents/${docId}`);
-};
-
-export const getGraphDataAPI = async (): Promise<GraphData> => {
-  const { data } = await api.get<GraphData>('/graph');
-  return data;
-};
-
+// GET /health
 export const healthCheckAPI = async (): Promise<boolean> => {
   try {
     await api.get('/health');
     return true;
   } catch {
     return false;
+  }
+};
+
+// GET /api/v1/graph  — optional, gracefully fails if not implemented yet
+export const getGraphDataAPI = async (): Promise<GraphData> => {
+  try {
+    const { data } = await api.get<GraphData>('/api/v1/graph');
+    return data;
+  } catch {
+    return { nodes: [], relationships: [] };
   }
 };

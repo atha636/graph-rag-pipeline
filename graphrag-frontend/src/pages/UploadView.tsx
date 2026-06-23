@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback } from 'react';
 import {
   Upload, FileText, FileType, File, CheckCircle, XCircle,
-  Loader2, CloudUpload, Sparkles, Network, Layers
+  Loader2, CloudUpload, Sparkles, Network, Layers, Calendar, Hash
 } from 'lucide-react';
 import { uploadDocumentAPI } from '../services/api';
 import type { UploadResponse } from '../types';
@@ -20,7 +20,7 @@ const FileIcon = ({ name }: { name: string }) => {
   return <File size={20} color="var(--text-muted)" />;
 };
 
-export const UploadView: React.FC<{ onUploaded: () => void }> = ({ onUploaded }) => {
+export const UploadView: React.FC<{ onUploaded: (filename: string, docId: string, uploadedAt: string) => void }> = ({ onUploaded }) => {
   const [items, setItems] = useState<UploadItem[]>([]);
   const [dragging, setDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -29,12 +29,10 @@ export const UploadView: React.FC<{ onUploaded: () => void }> = ({ onUploaded })
     const arr = Array.from(files).filter(
       (f) => f.name.endsWith('.pdf') || f.name.endsWith('.docx') || f.name.endsWith('.txt')
     );
-    const newItems: UploadItem[] = arr.map((f) => ({
-      file: f,
-      status: 'pending',
-      progress: 0,
-    }));
-    setItems((prev) => [...prev, ...newItems]);
+    setItems((prev) => [
+      ...prev,
+      ...arr.map((f) => ({ file: f, status: 'pending' as const, progress: 0 })),
+    ]);
   };
 
   const onDrop = useCallback((e: React.DragEvent) => {
@@ -45,33 +43,21 @@ export const UploadView: React.FC<{ onUploaded: () => void }> = ({ onUploaded })
 
   const uploadAll = async () => {
     const pending = items.filter((i) => i.status === 'pending');
-    if (!pending.length) return;
-
     for (const item of pending) {
-      setItems((prev) =>
-        prev.map((i) => i.file === item.file ? { ...i, status: 'uploading' } : i)
-      );
-
+      setItems((prev) => prev.map((i) => i.file === item.file ? { ...i, status: 'uploading' } : i));
       try {
+        // POST /api/v1/upload
         const result = await uploadDocumentAPI(item.file, (pct) => {
-          setItems((prev) =>
-            prev.map((i) => i.file === item.file ? { ...i, progress: pct } : i)
-          );
+          setItems((prev) => prev.map((i) => i.file === item.file ? { ...i, progress: pct } : i));
         });
-
         setItems((prev) =>
-          prev.map((i) =>
-            i.file === item.file ? { ...i, status: 'success', progress: 100, result } : i
-          )
+          prev.map((i) => i.file === item.file ? { ...i, status: 'success', progress: 100, result } : i)
         );
-        onUploaded();
-      } catch {
+        onUploaded(result.filename, result.document_id, result.uploaded_at);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'Upload failed. Check backend connection.';
         setItems((prev) =>
-          prev.map((i) =>
-            i.file === item.file
-              ? { ...i, status: 'error', error: 'Upload failed. Check backend connection.' }
-              : i
-          )
+          prev.map((i) => i.file === item.file ? { ...i, status: 'error', error: msg } : i)
         );
       }
     }
@@ -82,12 +68,11 @@ export const UploadView: React.FC<{ onUploaded: () => void }> = ({ onUploaded })
 
   return (
     <div style={styles.container}>
-      {/* Header */}
       <div style={styles.header}>
         <div style={styles.headerIcon}><CloudUpload size={15} color="var(--accent)" /></div>
         <div>
           <h2 style={styles.headerTitle}>Upload Documents</h2>
-          <p style={styles.headerSub}>PDF, DOCX, and TXT files supported</p>
+          <p style={styles.headerSub}>PDF, DOCX, and TXT files are processed automatically</p>
         </div>
       </div>
 
@@ -116,7 +101,7 @@ export const UploadView: React.FC<{ onUploaded: () => void }> = ({ onUploaded })
           <p style={styles.dropTitle}>
             {dragging ? 'Drop to add files' : 'Drop files here or click to browse'}
           </p>
-          <p style={styles.dropSub}>PDF · DOCX · TXT — max 50 MB per file</p>
+          <p style={styles.dropSub}>PDF · DOCX · TXT</p>
         </div>
 
         {/* File list */}
@@ -124,58 +109,75 @@ export const UploadView: React.FC<{ onUploaded: () => void }> = ({ onUploaded })
           <div style={styles.fileList}>
             {items.map((item, idx) => (
               <div key={idx} style={styles.fileCard}>
-                <div style={styles.fileLeft}>
-                  <FileIcon name={item.file.name} />
-                  <div style={styles.fileMeta}>
-                    <span style={styles.fileName}>{item.file.name}</span>
-                    <span style={styles.fileSize}>
-                      {(item.file.size / 1024 / 1024).toFixed(2)} MB
-                    </span>
+                <div style={styles.fileTop}>
+                  <div style={styles.fileLeft}>
+                    <FileIcon name={item.file.name} />
+                    <div style={styles.fileMeta}>
+                      <span style={styles.fileName}>{item.file.name}</span>
+                      <span style={styles.fileSize}>
+                        {(item.file.size / 1024 / 1024).toFixed(2)} MB
+                      </span>
+                    </div>
+                  </div>
+                  <div style={styles.fileRight}>
+                    {item.status === 'pending' && (
+                      <button style={styles.removeBtn} onClick={() => remove(item.file)}>
+                        <XCircle size={16} color="var(--text-muted)" />
+                      </button>
+                    )}
+                    {item.status === 'uploading' && (
+                      <div style={styles.uploading}>
+                        <Loader2 size={14} style={{ animation: 'spin 1s linear infinite', color: 'var(--accent)' }} />
+                        <span style={styles.progressText}>{item.progress}%</span>
+                      </div>
+                    )}
+                    {item.status === 'success' && <CheckCircle size={16} color="var(--success)" />}
+                    {item.status === 'error' && <XCircle size={16} color="var(--error)" />}
                   </div>
                 </div>
 
-                <div style={styles.fileRight}>
-                  {item.status === 'pending' && (
-                    <button style={styles.removeBtn} onClick={() => remove(item.file)}>
-                      <XCircle size={16} color="var(--text-muted)" />
-                    </button>
-                  )}
-                  {item.status === 'uploading' && (
-                    <div style={styles.uploading}>
-                      <Loader2 size={14} style={{ animation: 'spin 1s linear infinite', color: 'var(--accent)' }} />
-                      <span style={styles.progressText}>{item.progress}%</span>
-                    </div>
-                  )}
-                  {item.status === 'success' && (
-                    <CheckCircle size={16} color="var(--success)" />
-                  )}
-                  {item.status === 'error' && (
-                    <XCircle size={16} color="var(--error)" />
-                  )}
-                </div>
-
-                {/* Progress bar */}
                 {item.status === 'uploading' && (
                   <div style={styles.progressBar}>
                     <div style={{ ...styles.progressFill, width: `${item.progress}%` }} />
                   </div>
                 )}
 
-                {/* Success stats */}
+                {/* Success — show backend response fields */}
                 {item.status === 'success' && item.result && (
-                  <div style={styles.successStats}>
-                    <div style={styles.stat}>
-                      <Layers size={11} color="var(--accent)" />
-                      <span>{item.result.chunks_created} chunks</span>
+                  <div style={styles.successBox}>
+                    <div style={styles.successStats}>
+                      <div style={styles.stat}>
+                        <Hash size={11} color="var(--accent)" />
+                        <span>ID: {item.result.document_id}</span>
+                      </div>
+                      <div style={styles.stat}>
+                        <Calendar size={11} color="var(--text-muted)" />
+                        <span>{item.result.uploaded_at}</span>
+                      </div>
                     </div>
-                    <div style={styles.stat}>
-                      <Sparkles size={11} color="var(--secondary)" />
-                      <span>{item.result.entities_extracted} entities</span>
-                    </div>
-                    <div style={styles.stat}>
-                      <Network size={11} color="var(--pinecone)" />
-                      <span>{item.result.relationships_created} relationships</span>
-                    </div>
+                    {/* result.result contains chunks/entities/relationships if backend returns them */}
+                    {item.result.result && (
+                      <div style={styles.successStats}>
+                        {typeof item.result.result.chunks_created === 'number' && (
+                          <div style={styles.stat}>
+                            <Layers size={11} color="var(--accent)" />
+                            <span>{item.result.result.chunks_created} chunks</span>
+                          </div>
+                        )}
+                        {typeof item.result.result.entities_extracted === 'number' && (
+                          <div style={styles.stat}>
+                            <Sparkles size={11} color="var(--secondary)" />
+                            <span>{item.result.result.entities_extracted} entities</span>
+                          </div>
+                        )}
+                        {typeof item.result.result.relationships_created === 'number' && (
+                          <div style={styles.stat}>
+                            <Network size={11} color="var(--pinecone)" />
+                            <span>{item.result.result.relationships_created} relationships</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -187,7 +189,6 @@ export const UploadView: React.FC<{ onUploaded: () => void }> = ({ onUploaded })
           </div>
         )}
 
-        {/* Upload button */}
         {hasPending && (
           <button style={styles.uploadBtn} onClick={uploadAll}>
             <Upload size={15} />
@@ -195,12 +196,12 @@ export const UploadView: React.FC<{ onUploaded: () => void }> = ({ onUploaded })
           </button>
         )}
 
-        {/* Info cards */}
+        {/* Pipeline info */}
         <div style={styles.infoGrid}>
           {[
-            { icon: <Layers size={16} color="var(--accent)" />, title: 'Smart Chunking', desc: 'Text is split into optimal chunks for retrieval accuracy.' },
-            { icon: <Sparkles size={16} color="var(--secondary)" />, title: 'Entity Extraction', desc: 'AI extracts people, organizations, and relationships.' },
-            { icon: <Network size={16} color="var(--pinecone)" />, title: 'Knowledge Graph', desc: 'Entities are linked in Neo4j for graph-based queries.' },
+            { icon: <Layers size={16} color="var(--accent)" />, title: 'Smart Chunking', desc: 'Text is split into optimal chunks, embedded with Sentence Transformers, stored in Pinecone.' },
+            { icon: <Sparkles size={16} color="var(--secondary)" />, title: 'Entity Extraction', desc: 'Groq LLM extracts people, organizations, products, and events from your documents.' },
+            { icon: <Network size={16} color="var(--pinecone)" />, title: 'Knowledge Graph', desc: 'Entities and relationships are stored in Neo4j Aura for graph-based traversal queries.' },
           ].map((card) => (
             <div key={card.title} style={styles.infoCard}>
               <div style={styles.infoIcon}>{card.icon}</div>
@@ -217,64 +218,32 @@ export const UploadView: React.FC<{ onUploaded: () => void }> = ({ onUploaded })
 };
 
 const styles: Record<string, React.CSSProperties> = {
-  container: {
-    display: 'flex',
-    flexDirection: 'column',
-    height: '100%',
-    overflow: 'hidden',
-  },
+  container: { display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' },
   header: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 12,
-    padding: '18px 28px',
-    borderBottom: '1px solid var(--border)',
-    background: 'var(--bg-surface)',
-    flexShrink: 0,
+    display: 'flex', alignItems: 'center', gap: 12, padding: '18px 28px',
+    borderBottom: '1px solid var(--border)', background: 'var(--bg-surface)', flexShrink: 0,
   },
   headerIcon: {
-    width: 36, height: 36, borderRadius: 10,
-    background: 'var(--accent-glow)',
-    border: '1px solid rgba(16,185,129,0.2)',
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    width: 36, height: 36, borderRadius: 10, background: 'var(--accent-glow)',
+    border: '1px solid rgba(16,185,129,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center',
   },
   headerTitle: { fontSize: 16, fontWeight: 600, color: 'var(--text-primary)' },
   headerSub: { fontSize: 11.5, color: 'var(--text-muted)', marginTop: 1 },
-  content: {
-    flex: 1,
-    overflowY: 'auto',
-    padding: 28,
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 20,
-  },
+  content: { flex: 1, overflowY: 'auto', padding: 28, display: 'flex', flexDirection: 'column', gap: 20 },
   dropzone: {
-    border: '2px dashed',
-    borderRadius: 'var(--radius-lg)',
-    padding: '48px 24px',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: 12,
-    cursor: 'pointer',
-    transition: 'all 0.2s',
-    userSelect: 'none',
+    border: '2px dashed', borderRadius: 'var(--radius-lg)', padding: '48px 24px',
+    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12,
+    cursor: 'pointer', transition: 'all 0.2s', userSelect: 'none',
   },
   dropTitle: { fontSize: 15, fontWeight: 500, color: 'var(--text-secondary)' },
   dropSub: { fontSize: 12, color: 'var(--text-muted)' },
   fileList: { display: 'flex', flexDirection: 'column', gap: 10 },
   fileCard: {
-    background: 'var(--bg-surface)',
-    border: '1px solid var(--border)',
-    borderRadius: 'var(--radius-md)',
-    padding: '12px 16px',
-    display: 'flex',
-    flexWrap: 'wrap',
-    alignItems: 'center',
-    gap: 10,
-    position: 'relative',
-    animation: 'fadeIn 0.2s ease',
+    background: 'var(--bg-surface)', border: '1px solid var(--border)',
+    borderRadius: 'var(--radius-md)', padding: '12px 16px',
+    display: 'flex', flexDirection: 'column', gap: 10, animation: 'fadeIn 0.2s ease',
   },
+  fileTop: { display: 'flex', alignItems: 'center', justifyContent: 'space-between' },
   fileLeft: { display: 'flex', alignItems: 'center', gap: 10, flex: 1 },
   fileMeta: { display: 'flex', flexDirection: 'column', gap: 2 },
   fileName: { fontSize: 13, fontWeight: 500, color: 'var(--text-primary)' },
@@ -283,59 +252,26 @@ const styles: Record<string, React.CSSProperties> = {
   removeBtn: { background: 'none', border: 'none', cursor: 'pointer', display: 'flex' },
   uploading: { display: 'flex', alignItems: 'center', gap: 6 },
   progressText: { fontSize: 11.5, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' },
-  progressBar: {
-    width: '100%',
-    height: 3,
-    background: 'var(--bg-elevated)',
-    borderRadius: 2,
-    overflow: 'hidden',
-  },
-  progressFill: {
-    height: '100%',
-    background: 'var(--accent)',
-    borderRadius: 2,
-    transition: 'width 0.3s ease',
-  },
-  successStats: {
-    width: '100%',
-    display: 'flex',
-    gap: 16,
-    paddingTop: 6,
-    borderTop: '1px solid var(--border-subtle)',
-    marginTop: 2,
-  },
+  progressBar: { width: '100%', height: 3, background: 'var(--bg-elevated)', borderRadius: 2, overflow: 'hidden' },
+  progressFill: { height: '100%', background: 'var(--accent)', borderRadius: 2, transition: 'width 0.3s ease' },
+  successBox: { display: 'flex', flexDirection: 'column', gap: 6, paddingTop: 4, borderTop: '1px solid var(--border-subtle)' },
+  successStats: { display: 'flex', gap: 16, flexWrap: 'wrap' },
   stat: { display: 'flex', alignItems: 'center', gap: 5, fontSize: 11.5, color: 'var(--text-muted)' },
-  errorText: { width: '100%', fontSize: 11.5, color: 'var(--error)', paddingTop: 4 },
+  errorText: { fontSize: 11.5, color: 'var(--error)' },
   uploadBtn: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    padding: '12px 24px',
-    borderRadius: 'var(--radius-md)',
-    background: 'var(--accent)',
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: 600,
-    cursor: 'pointer',
-    border: 'none',
-    transition: 'opacity 0.2s',
+    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+    padding: '12px 24px', borderRadius: 'var(--radius-md)', background: 'var(--accent)',
+    color: '#fff', fontSize: 14, fontWeight: 600, cursor: 'pointer', border: 'none',
   },
   infoGrid: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginTop: 4 },
   infoCard: {
-    background: 'var(--bg-surface)',
-    border: '1px solid var(--border)',
-    borderRadius: 'var(--radius-md)',
-    padding: '14px 16px',
-    display: 'flex',
-    gap: 12,
-    alignItems: 'flex-start',
+    background: 'var(--bg-surface)', border: '1px solid var(--border)',
+    borderRadius: 'var(--radius-md)', padding: '14px 16px',
+    display: 'flex', gap: 12, alignItems: 'flex-start',
   },
   infoIcon: {
-    width: 32, height: 32, borderRadius: 8,
-    background: 'var(--bg-elevated)',
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    flexShrink: 0,
+    width: 32, height: 32, borderRadius: 8, background: 'var(--bg-elevated)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
   infoTitle: { fontSize: 12.5, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 3 },
   infoDesc: { fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.5 },

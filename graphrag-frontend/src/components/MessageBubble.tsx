@@ -17,9 +17,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
         <div style={styles.userBubble}>
           <p style={styles.userText}>{message.content}</p>
         </div>
-        <div style={styles.avatarUser}>
-          <User size={14} />
-        </div>
+        <div style={styles.avatarUser}><User size={14} /></div>
       </div>
     );
   }
@@ -31,8 +29,12 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
       </div>
 
       <div style={styles.assistantContent}>
+        {/* Sources row — only when we have results */}
         {message.sources && message.sources.length > 0 && (
-          <SourcesRow sources={message.sources} count={message.sourceCount ?? message.sources.length} />
+          <SourcesRow
+            sources={message.sources}
+            documents={message.documents ?? []}
+          />
         )}
 
         <div style={styles.assistantBubble}>
@@ -60,93 +62,41 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
 
 const styles: Record<string, React.CSSProperties> = {
   userRow: {
-    display: 'flex',
-    justifyContent: 'flex-end',
-    alignItems: 'flex-end',
-    gap: 10,
-    animation: 'fadeIn 0.25s ease',
+    display: 'flex', justifyContent: 'flex-end',
+    alignItems: 'flex-end', gap: 10, animation: 'fadeIn 0.25s ease',
   },
   userBubble: {
-    background: 'var(--accent-glow)',
-    border: '1px solid rgba(16,185,129,0.2)',
-    borderRadius: '14px 14px 4px 14px',
-    padding: '10px 14px',
-    maxWidth: '70%',
+    background: 'var(--accent-glow)', border: '1px solid rgba(16,185,129,0.2)',
+    borderRadius: '14px 14px 4px 14px', padding: '10px 14px', maxWidth: '70%',
   },
-  userText: {
-    fontSize: 14,
-    color: 'var(--text-primary)',
-    lineHeight: 1.6,
-  },
+  userText: { fontSize: 14, color: 'var(--text-primary)', lineHeight: 1.6 },
   avatarUser: {
-    width: 30,
-    height: 30,
-    borderRadius: '50%',
-    background: 'var(--bg-elevated)',
-    border: '1px solid var(--border)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    color: 'var(--text-muted)',
-    flexShrink: 0,
+    width: 30, height: 30, borderRadius: '50%',
+    background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    color: 'var(--text-muted)', flexShrink: 0,
   },
   assistantRow: {
-    display: 'flex',
-    alignItems: 'flex-start',
-    gap: 12,
-    animation: 'fadeIn 0.25s ease',
+    display: 'flex', alignItems: 'flex-start',
+    gap: 12, animation: 'fadeIn 0.25s ease',
   },
   avatarBot: {
-    width: 30,
-    height: 30,
-    borderRadius: '50%',
-    background: 'var(--accent-glow)',
-    border: '1px solid rgba(16,185,129,0.25)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-    marginTop: 2,
+    width: 30, height: 30, borderRadius: '50%',
+    background: 'var(--accent-glow)', border: '1px solid rgba(16,185,129,0.25)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    flexShrink: 0, marginTop: 2,
   },
-  assistantContent: {
-    flex: 1,
-    maxWidth: 'calc(100% - 42px)',
-  },
+  assistantContent: { flex: 1, maxWidth: 'calc(100% - 42px)' },
   assistantBubble: {
-    background: 'var(--bg-surface)',
-    border: '1px solid var(--border)',
-    borderRadius: '4px 14px 14px 14px',
-    padding: '12px 16px',
+    background: 'var(--bg-surface)', border: '1px solid var(--border)',
+    borderRadius: '4px 14px 14px 14px', padding: '12px 16px',
   },
-  markdown: {
-    fontSize: 14,
-    color: 'var(--text-primary)',
-    lineHeight: 1.75,
-  },
-  cursor: {
-    animation: 'blink 0.8s step-end infinite',
-    color: 'var(--accent)',
-    marginLeft: 1,
-  },
-  typingIndicator: {
-    display: 'flex',
-    gap: 5,
-    alignItems: 'center',
-    height: 20,
-  },
+  markdown: { fontSize: 14, color: 'var(--text-primary)', lineHeight: 1.75 },
+  cursor: { animation: 'blink 0.8s step-end infinite', color: 'var(--accent)', marginLeft: 1 },
+  typingIndicator: { display: 'flex', gap: 5, alignItems: 'center', height: 20 },
   dot: {
-    width: 7,
-    height: 7,
-    borderRadius: '50%',
-    background: 'var(--accent)',
-    display: 'inline-block',
-    animation: 'pulse-dot 1.2s ease-in-out infinite',
+    width: 7, height: 7, borderRadius: '50%', background: 'var(--accent)',
+    display: 'inline-block', animation: 'pulse-dot 1.2s ease-in-out infinite',
   },
-  timestamp: {
-    fontSize: 10.5,
-    color: 'var(--text-faint)',
-    marginTop: 5,
-    display: 'block',
-    paddingLeft: 4,
-  },
+  timestamp: { fontSize: 10.5, color: 'var(--text-faint)', marginTop: 5, display: 'block', paddingLeft: 4 },
 };
