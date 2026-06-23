@@ -5,6 +5,7 @@ import { UploadView } from './pages/UploadView';
 import { GraphView } from './pages/GraphView';
 import { healthCheckAPI } from './services/api';
 import type { Document, View } from './types';
+import { useTheme } from './components/ThemeToggle';
 
 // Documents are tracked client-side from successful uploads
 // (no GET /api/documents endpoint exists in the backend)
@@ -19,6 +20,7 @@ const loadStoredDocs = (): Document[] => {
 };
 
 export const App: React.FC = () => {
+  const { theme, toggle: toggleTheme } = useTheme();
   const [view, setView] = useState<View>('chat');
   const [documents, setDocuments] = useState<Document[]>(loadStoredDocs);
   const [isOnline, setIsOnline] = useState(false);
@@ -67,6 +69,8 @@ export const App: React.FC = () => {
         loadingDocs={false}
         onDeleteDoc={handleDeleteDoc}
         isOnline={isOnline}
+        theme={theme}
+        onToggleTheme={toggleTheme}
       />
       <main style={styles.main}>
         {view === 'chat' && <ChatView />}

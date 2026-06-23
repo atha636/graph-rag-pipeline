@@ -12,6 +12,7 @@ import {
   WifiOff,
 } from 'lucide-react';
 import type { Document, View } from '../types';
+import { ThemeToggle } from './ThemeToggle';
 
 interface SidebarProps {
   currentView: View;
@@ -20,6 +21,8 @@ interface SidebarProps {
   loadingDocs: boolean;
   onDeleteDoc: (id: string) => void;
   isOnline: boolean;
+  theme: 'dark' | 'light';
+  onToggleTheme: () => void;
 }
 
 const FileIcon = ({ type }: { type: string }) => {
@@ -35,7 +38,7 @@ const navItems: { id: View; label: string; icon: React.ReactNode }[] = [
 ];
 
 export const Sidebar: React.FC<SidebarProps> = ({
-  currentView, onViewChange, documents, loadingDocs, onDeleteDoc, isOnline,
+  currentView, onViewChange, documents, loadingDocs, onDeleteDoc, isOnline, theme, onToggleTheme,
 }) => {
   const [hoveredDoc, setHoveredDoc] = React.useState<string | null>(null);
 
@@ -52,6 +55,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             ? <Wifi size={12} color="var(--success)" />
             : <WifiOff size={12} color="var(--error)" />}
         </div>
+        <ThemeToggle theme={theme} onToggle={onToggleTheme} />
       </div>
 
       {/* Nav */}
