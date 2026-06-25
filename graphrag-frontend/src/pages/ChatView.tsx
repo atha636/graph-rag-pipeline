@@ -1,8 +1,11 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Send, Sparkles, RotateCcw, GitBranch, Clock, ChevronDown } from 'lucide-react';
+import {
+  Send, Sparkles, RotateCcw, GitBranch, Clock,
+  ChevronDown, Download, Lightbulb, X,
+} from 'lucide-react';
 import { MessageBubble } from '../components/MessageBubble';
-import { queryAPI } from '../services/api';
-import type { Message } from '../types';
+import { queryAPI, cancelActiveQuery } from '../services/api';
+import type { Message, SessionStats } from '../types';
 
 const SUGGESTIONS = [
   'Who founded SpaceX?',
@@ -13,16 +16,75 @@ const SUGGESTIONS = [
 
 const MAX_CHARS = 2000;
 
-export const ChatView: React.FC = () => {
-  const [messages, setMessages]       = useState<Message[]>([]);
-  const [input, setInput]             = useState('');
-  const [loading, setLoading]         = useState(false);
-  const [lastLatency, setLastLatency] = useState<number | null>(null);
-  const [showScrollBtn, setShowScrollBtn] = useState(false);
+// Generate follow-up suggestions from the AI answer text
+const extractFollowUps = (answer: string, query: string): string[] => {
+  const q = query.toLowerCase();
+  const suggestions: string[] = [];
 
-  const bottomRef    = useRef<HTMLDivElement>(null);
-  const inputRef     = useRef<HTMLTextAreaElement>(null);
-  const messagesRef  = useRef<HTMLDivElement>(null);
+  if (q.includes('found') || q.includes('creat') || q.includes('start'))
+    suggestions.push('What else did they build?', 'When was this?');
+  if (q.includes('who'))
+    suggestions.push('What are they known for?', 'What companies are involved?');
+  if (q.includes('what'))
+    suggestions.push('Who is responsible for this?', 'When did this happen?');
+  if (q.includes('summar'))
+    suggestions.push('What are the key entities?', 'What relationships exist?');
+  if (answer.toLowerCase().includes('relationship'))
+    suggestions.push('Show me the knowledge graph');
+  if (answer.toLowerCase().includes('founded') || answer.toLowerCase().includes('ceo'))
+    suggestions.push('Who leads this organization now?');
+
+  // Deduplicate and limit
+  return [...new Set(suggestions)].slice(0, 3);
+};
+
+// Export conversation as a Markdown file
+const exportConversation = (messages: Message[]) => {
+  const lines: string[] = [
+    '# GraphRAG Conversation Export',
+    `> Exported on ${new Date().toLocaleString()}`,
+    '',
+  ];
+
+  messages.forEach(m => {
+    if (m.role === 'user') {
+      lines.push(`## You`, m.content, '');
+    } else {
+      lines.push(`## GraphRAG Assistant`, m.content, '');
+      if (m.sources && m.sources.length > 0) {
+        lines.push('**Sources:**');
+        m.sources.forEach((s, i) => {
+          lines.push(`- [${i + 1}] ${s.source_type === 'graph' ? 'Neo4j' : 'Pinecone'}: ${s.document_name ?? 'Graph result'}`);
+        });
+        lines.push('');
+      }
+      if (m.latency_ms) lines.push(`*Response time: ${m.latency_ms.toFixed(0)} ms*`, '');
+    }
+  });
+
+  const blob = new Blob([lines.join('\n')], { type: 'text/markdown' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = `graphrag-chat-${Date.now()}.md`;
+  a.click();
+  URL.revokeObjectURL(url);
+};
+
+interface ChatViewProps {
+  onStatsUpdate: (latency: number, sourceCount: number) => void;
+}
+
+export const ChatView: React.FC<ChatViewProps> = ({ onStatsUpdate }) => {
+  const [messages,     setMessages]     = useState<Message[]>([]);
+  const [input,        setInput]        = useState('');
+  const [loading,      setLoading]      = useState(false);
+  const [lastLatency,  setLastLatency]  = useState<number | null>(null);
+  const [showScrollBtn,setShowScrollBtn]= useState(false);
+
+  const bottomRef   = useRef<HTMLDivElement>(null);
+  const inputRef    = useRef<HTMLTextAreaElement>(null);
+  const messagesRef = useRef<HTMLDivElement>(null);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -37,34 +99,43 @@ export const ChatView: React.FC = () => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Show scroll-to-bottom button when scrolled up
+  // Show scroll-to-bottom button
   const handleScroll = useCallback(() => {
     const el = messagesRef.current;
     if (!el) return;
-    const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    setShowScrollBtn(distFromBottom > 200);
+    setShowScrollBtn(el.scrollHeight - el.scrollTop - el.clientHeight > 200);
   }, []);
 
-  const scrollToBottom = () => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
+  // Global Ctrl+K / Cmd+K to focus input
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const isMac = navigator.platform.toUpperCase().includes('MAC');
+      if ((isMac ? e.metaKey : e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        inputRef.current?.focus();
+      }
+      // Cmd+1/2/3 nav shortcuts are handled in App
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
 
   const sendMessage = async (text: string) => {
     if (!text.trim() || loading) return;
 
     const userMsg: Message = {
-      id: Date.now().toString(),
-      role: 'user',
-      content: text.trim(),
+      id:        Date.now().toString(),
+      role:      'user',
+      content:   text.trim(),
       timestamp: new Date(),
     };
 
     const aiMsgId = (Date.now() + 1).toString();
     const aiMsg: Message = {
-      id: aiMsgId,
-      role: 'assistant',
-      content: '',
-      timestamp: new Date(),
+      id:          aiMsgId,
+      role:        'assistant',
+      content:     '',
+      timestamp:   new Date(),
       isStreaming: true,
     };
 
@@ -74,21 +145,40 @@ export const ChatView: React.FC = () => {
 
     try {
       const response = await queryAPI({ query: text.trim() });
+
+      const followUps = extractFollowUps(response.answer, text.trim());
+
       setLastLatency(response.latency_ms);
-      setMessages(prev =>
-        prev.map(m =>
-          m.id === aiMsgId
-            ? { ...m, content: response.answer, sources: response.sources, documents: response.documents, isStreaming: false }
-            : m
-        )
-      );
-    } catch {
+      onStatsUpdate(response.latency_ms, response.sources.length);
+
       setMessages(prev =>
         prev.map(m =>
           m.id === aiMsgId
             ? {
                 ...m,
-                content: '❌ **Could not reach the backend.**\n\nMake sure your FastAPI server is running:\n```\nuvicorn src.api.main:app --reload --port 8000\n```',
+                content:     response.answer,
+                sources:     response.sources,
+                documents:   response.documents,
+                latency_ms:  response.latency_ms,
+                followUps,
+                isStreaming: false,
+              }
+            : m
+        )
+      );
+    } catch (err: unknown) {
+      const isCancelled =
+        typeof err === 'object' && err !== null && 'message' in err &&
+        (err as { message: string }).message === 'Cancelled by user';
+
+      setMessages(prev =>
+        prev.map(m =>
+          m.id === aiMsgId
+            ? {
+                ...m,
+                content: isCancelled
+                  ? '_Request cancelled._'
+                  : '❌ **Could not reach the backend.**\n\nMake sure your FastAPI server is running:\n```\nuvicorn src.api.main:app --reload --port 8000\n```',
                 isStreaming: false,
               }
             : m
@@ -98,6 +188,11 @@ export const ChatView: React.FC = () => {
       setLoading(false);
       setTimeout(() => inputRef.current?.focus(), 50);
     }
+  };
+
+  const handleStop = () => {
+    cancelActiveQuery();
+    setLoading(false);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -126,29 +221,36 @@ export const ChatView: React.FC = () => {
 
         <div style={styles.headerRight}>
           {lastLatency != null && (
-            <div style={styles.latency}>
-              <Clock size={11} color="var(--text-muted)" />
+            <div style={styles.latencyBadge}>
+              <Clock size={11} />
               <span>{lastLatency.toFixed(0)} ms</span>
             </div>
           )}
           {messages.length > 0 && (
-            <button
-              style={styles.resetBtn}
-              onClick={() => { setMessages([]); setLastLatency(null); setInput(''); }}
-            >
-              <RotateCcw size={13} />
-              <span>New chat</span>
-            </button>
+            <>
+              <button
+                style={styles.headerBtn}
+                onClick={() => exportConversation(messages)}
+                title="Export as Markdown"
+              >
+                <Download size={13} />
+                <span>Export</span>
+              </button>
+              <button
+                style={styles.headerBtn}
+                onClick={() => { setMessages([]); setLastLatency(null); setInput(''); }}
+                title="New conversation"
+              >
+                <RotateCcw size={13} />
+                <span>New chat</span>
+              </button>
+            </>
           )}
         </div>
       </div>
 
       {/* Messages */}
-      <div
-        style={styles.messages}
-        ref={messagesRef}
-        onScroll={handleScroll}
-      >
+      <div style={styles.messages} ref={messagesRef} onScroll={handleScroll}>
         {isEmpty ? (
           <div style={styles.welcome}>
             <div style={styles.welcomeIcon}>
@@ -161,26 +263,55 @@ export const ChatView: React.FC = () => {
             </p>
             <div style={styles.suggestions}>
               {SUGGESTIONS.map(s => (
-                <button
-                  key={s}
-                  style={styles.suggestion}
-                  onClick={() => sendMessage(s)}
-                >
+                <button key={s} style={styles.suggestion} onClick={() => sendMessage(s)}>
                   {s}
                 </button>
               ))}
             </div>
+            <div style={styles.shortcutHint}>
+              <kbd style={styles.kbd}>⌘K</kbd>
+              <span style={styles.shortcutText}>to focus input anywhere</span>
+            </div>
           </div>
         ) : (
           <div style={styles.messageList}>
-            {messages.map(m => <MessageBubble key={m.id} message={m} />)}
+            {messages.map((m, idx) => (
+              <React.Fragment key={m.id}>
+                <MessageBubble message={m} />
+
+                {/* Follow-up suggestions after last assistant message */}
+                {m.role === 'assistant' &&
+                 !m.isStreaming &&
+                 m.followUps &&
+                 m.followUps.length > 0 &&
+                 idx === messages.length - 1 && (
+                  <div style={styles.followUps}>
+                    <div style={styles.followUpsHeader}>
+                      <Lightbulb size={11} color="var(--accent)" />
+                      <span style={styles.followUpsLabel}>Follow-up suggestions</span>
+                    </div>
+                    <div style={styles.followUpBtns}>
+                      {m.followUps.map(fu => (
+                        <button
+                          key={fu}
+                          style={styles.followUpBtn}
+                          onClick={() => sendMessage(fu)}
+                          disabled={loading}
+                        >
+                          {fu}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </React.Fragment>
+            ))}
             <div ref={bottomRef} />
           </div>
         )}
 
-        {/* Scroll to bottom button */}
         {showScrollBtn && (
-          <button style={styles.scrollBtn} onClick={scrollToBottom}>
+          <button style={styles.scrollBtn} onClick={() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' })}>
             <ChevronDown size={16} />
           </button>
         )}
@@ -196,13 +327,14 @@ export const ChatView: React.FC = () => {
           <textarea
             ref={inputRef}
             style={styles.input}
-            placeholder="Ask anything about your documents…"
+            placeholder="Ask anything about your documents… (⌘K)"
             value={input}
             onChange={e => setInput(e.target.value.slice(0, MAX_CHARS))}
             onKeyDown={handleKeyDown}
             rows={1}
             disabled={loading}
           />
+
           <div style={styles.inputActions}>
             {input.length > MAX_CHARS * 0.7 && (
               <span style={{
@@ -212,24 +344,35 @@ export const ChatView: React.FC = () => {
                 {charsLeft}
               </span>
             )}
-            <button
-              style={{
-                ...styles.sendBtn,
-                background: input.trim() && !loading ? 'var(--accent)' : 'var(--bg-hover)',
-                cursor: input.trim() && !loading ? 'pointer' : 'not-allowed',
-              }}
-              onClick={() => sendMessage(input)}
-              disabled={!input.trim() || loading}
-            >
-              {loading
-                ? <span style={styles.sendSpinner} />
-                : <Send size={15} color={input.trim() ? '#fff' : 'var(--text-muted)'} />}
-            </button>
+
+            {loading ? (
+              <button style={{ ...styles.sendBtn, background: 'var(--error)' }} onClick={handleStop} title="Stop">
+                <X size={15} color="#fff" />
+              </button>
+            ) : (
+              <button
+                style={{
+                  ...styles.sendBtn,
+                  background: input.trim() ? 'var(--accent)' : 'var(--bg-hover)',
+                  cursor: input.trim() ? 'pointer' : 'not-allowed',
+                }}
+                onClick={() => sendMessage(input)}
+                disabled={!input.trim()}
+              >
+                <Send size={15} color={input.trim() ? '#fff' : 'var(--text-muted)'} />
+              </button>
+            )}
           </div>
         </div>
+
         <div style={styles.hintRow}>
-          <span style={styles.hint}>↵ Send · Shift+↵ New line</span>
-          {loading && <span style={styles.loadingHint}>Searching knowledge graph…</span>}
+          <span style={styles.hint}>↵ Send · Shift+↵ New line · ⌘K Focus</span>
+          {loading && (
+            <span style={styles.loadingHint}>
+              <span style={styles.loadingDot} />
+              Searching knowledge graph…
+            </span>
+          )}
         </div>
       </div>
     </div>
@@ -243,38 +386,36 @@ const styles: Record<string, React.CSSProperties> = {
   },
   header: {
     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-    padding: '16px 28px', borderBottom: '1px solid var(--border)',
+    padding: '14px 28px', borderBottom: '1px solid var(--border)',
     background: 'var(--bg-surface)', flexShrink: 0,
   },
   headerLeft:  { display: 'flex', alignItems: 'center', gap: 12 },
-  headerRight: { display: 'flex', alignItems: 'center', gap: 10 },
+  headerRight: { display: 'flex', alignItems: 'center', gap: 8 },
   headerIcon: {
-    width: 36, height: 36, borderRadius: 10,
+    width: 34, height: 34, borderRadius: 9,
     background: 'var(--accent-glow)', border: '1px solid rgba(16,185,129,0.2)',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
   },
-  headerTitle: { fontSize: 16, fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.2 },
-  headerSub:   { fontSize: 11.5, color: 'var(--text-muted)', marginTop: 1 },
-  latency: {
+  headerTitle: { fontSize: 15, fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.2 },
+  headerSub:   { fontSize: 11, color: 'var(--text-muted)', marginTop: 1 },
+  latencyBadge: {
     display: 'flex', alignItems: 'center', gap: 4, fontSize: 11,
     color: 'var(--text-muted)', background: 'var(--bg-elevated)',
     border: '1px solid var(--border)', padding: '3px 9px', borderRadius: 6,
   },
-  resetBtn: {
-    display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px',
+  headerBtn: {
+    display: 'flex', alignItems: 'center', gap: 5, padding: '5px 11px',
     borderRadius: 'var(--radius-sm)', background: 'var(--bg-elevated)',
     border: '1px solid var(--border)', color: 'var(--text-secondary)',
     fontSize: 12, fontWeight: 500, cursor: 'pointer',
-    transition: 'background 0.15s',
   },
   messages: {
-    flex: 1, overflowY: 'auto', padding: '0 28px',
-    position: 'relative',
+    flex: 1, overflowY: 'auto', padding: '0 28px', position: 'relative',
   },
   welcome: {
     display: 'flex', flexDirection: 'column', alignItems: 'center',
-    justifyContent: 'center', minHeight: '100%', textAlign: 'center',
-    padding: '48px 20px', gap: 16,
+    justifyContent: 'center', minHeight: '100%',
+    textAlign: 'center', padding: '48px 20px', gap: 14,
   },
   welcomeIcon: {
     width: 68, height: 68, borderRadius: 18,
@@ -283,33 +424,47 @@ const styles: Record<string, React.CSSProperties> = {
   },
   welcomeTitle: { fontSize: 24, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.4px' },
   welcomeSub:   { fontSize: 14, color: 'var(--text-secondary)', maxWidth: 440, lineHeight: 1.75 },
-  suggestions:  { display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center', marginTop: 8 },
+  suggestions:  { display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center', marginTop: 6 },
   suggestion: {
     padding: '9px 18px', borderRadius: 99, background: 'var(--bg-elevated)',
     border: '1px solid var(--border)', color: 'var(--text-secondary)',
-    fontSize: 13, cursor: 'pointer', transition: 'all 0.15s',
-    fontWeight: 500,
+    fontSize: 13, cursor: 'pointer', fontWeight: 500,
+    transition: 'border-color 0.15s, color 0.15s',
   },
+  shortcutHint: {
+    display: 'flex', alignItems: 'center', gap: 6, marginTop: 4,
+  },
+  kbd: {
+    fontSize: 10.5, fontFamily: 'var(--font-mono)',
+    background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+    borderBottom: '2px solid var(--border)', borderRadius: 5,
+    padding: '2px 7px', color: 'var(--text-muted)',
+  },
+  shortcutText: { fontSize: 12, color: 'var(--text-faint)' },
   messageList: { display: 'flex', flexDirection: 'column', gap: 22, padding: '28px 0' },
+  followUps: {
+    display: 'flex', flexDirection: 'column', gap: 7,
+    paddingLeft: 42, animation: 'fadeIn 0.3s ease',
+  },
+  followUpsHeader: { display: 'flex', alignItems: 'center', gap: 5 },
+  followUpsLabel:  { fontSize: 11, color: 'var(--text-muted)', fontWeight: 500 },
+  followUpBtns:    { display: 'flex', flexWrap: 'wrap', gap: 6 },
+  followUpBtn: {
+    padding: '6px 14px', borderRadius: 99, fontSize: 12,
+    background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+    color: 'var(--text-secondary)', cursor: 'pointer', fontWeight: 500,
+    transition: 'border-color 0.15s',
+  },
   scrollBtn: {
-    position: 'sticky',
-    bottom: 16,
-    marginLeft: 'auto',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: 34,
-    height: 34,
-    borderRadius: '50%',
-    background: 'var(--bg-elevated)',
-    border: '1px solid var(--border)',
-    color: 'var(--text-secondary)',
-    cursor: 'pointer',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
-    animation: 'fadeIn 0.2s ease',
+    position: 'sticky', bottom: 16, marginLeft: 'auto',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    width: 34, height: 34, borderRadius: '50%',
+    background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+    color: 'var(--text-secondary)', cursor: 'pointer',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.3)', animation: 'fadeIn 0.2s ease',
   },
   inputArea: {
-    padding: '14px 28px 18px', borderTop: '1px solid var(--border)',
+    padding: '12px 28px 16px', borderTop: '1px solid var(--border)',
     background: 'var(--bg-surface)', flexShrink: 0,
   },
   inputWrapper: {
@@ -321,30 +476,28 @@ const styles: Record<string, React.CSSProperties> = {
   input: {
     flex: 1, background: 'none', border: 'none', outline: 'none',
     color: 'var(--text-primary)', fontSize: 14, resize: 'none',
-    lineHeight: 1.6, maxHeight: 140, padding: '2px 0',
-    overflowY: 'auto',
+    lineHeight: 1.6, maxHeight: 140, padding: '2px 0', overflowY: 'auto',
   },
   inputActions: { display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 },
-  charCount:   { fontSize: 11, fontFamily: 'var(--font-mono)', transition: 'color 0.2s' },
+  charCount:    { fontSize: 11, fontFamily: 'var(--font-mono)', transition: 'color 0.2s' },
   sendBtn: {
     width: 36, height: 36, borderRadius: 10, display: 'flex',
     alignItems: 'center', justifyContent: 'center', border: 'none',
     transition: 'background 0.2s', flexShrink: 0,
   },
-  sendSpinner: {
-    width: 14, height: 14, borderRadius: '50%',
-    border: '2px solid rgba(255,255,255,0.3)',
-    borderTopColor: '#fff',
-    animation: 'spin 0.7s linear infinite',
-    display: 'inline-block',
-  },
   hintRow: {
     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-    marginTop: 7, paddingLeft: 4,
+    marginTop: 6, paddingLeft: 4,
   },
-  hint:        { fontSize: 11, color: 'var(--text-faint)' },
+  hint: { fontSize: 11, color: 'var(--text-faint)' },
   loadingHint: {
-    fontSize: 11, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 5,
-    animation: 'pulse-dot 1.5s ease-in-out infinite',
+    display: 'flex', alignItems: 'center', gap: 6,
+    fontSize: 11, color: 'var(--accent)',
+  },
+  loadingDot: {
+    width: 6, height: 6, borderRadius: '50%',
+    background: 'var(--accent)',
+    animation: 'pulse-dot 1.2s ease-in-out infinite',
+    display: 'inline-block',
   },
 };

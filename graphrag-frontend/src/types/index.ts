@@ -3,9 +3,9 @@ export interface Document {
   name: string;
   type: 'pdf' | 'docx' | 'txt';
   uploadedAt?: string;
+  size?: number;
 }
 
-// Matches your backend Source model exactly
 export interface Source {
   source_type: 'vector' | 'graph';
   content: string;
@@ -13,7 +13,7 @@ export interface Source {
   document_type?: string;
   document_id?: string;
   uploaded_at?: string;
-  chunk_id?: string;
+  chunk_id?: number;
   chunk_size?: number;
   score?: number;
   relevance_score?: number;
@@ -27,14 +27,14 @@ export interface Message {
   documents?: string[];
   timestamp: Date;
   isStreaming?: boolean;
+  latency_ms?: number;
+  followUps?: string[];
 }
 
-// POST /api/v1/query
 export interface QueryRequest {
   query: string;
 }
 
-// matches QueryResponse from your backend
 export interface QueryResponse {
   answer: string;
   documents: string[];
@@ -42,8 +42,10 @@ export interface QueryResponse {
   latency_ms: number;
 }
 
-// POST /api/v1/upload response
 export interface UploadResult {
+  chunks_processed?: number;
+  vectors_created?: number;
+  relationships_added?: number;
   chunks_created?: number;
   entities_extracted?: number;
   relationships_created?: number;
@@ -74,4 +76,12 @@ export interface GraphData {
   relationships: GraphRelationship[];
 }
 
+// Session-level stats shown in sidebar footer
+export interface SessionStats {
+  totalQueries: number;
+  avgLatencyMs: number;
+  totalSources: number;
+}
+
 export type View = 'chat' | 'upload' | 'graph';
+export type DocFilter = 'all' | 'pdf' | 'docx' | 'txt';
