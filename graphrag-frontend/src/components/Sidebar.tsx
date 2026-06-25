@@ -21,7 +21,7 @@ interface SidebarProps {
 
 const FileIcon = ({ type }: { type: string }) => {
   if (type === 'pdf')  return <FileType size={13} color="#ef4444" />;
-  if (type === 'docx') return <FileText size={13} color="#6366f1" />;
+  if (type === 'docx') return <FileText size={13} color="var(--secondary)" />;
   return <File size={13} color="var(--sidebar-text)" />;
 };
 
@@ -295,7 +295,7 @@ const styles: Record<string, React.CSSProperties> = {
   logoIcon: {
     width: 28, height: 28, borderRadius: 7,
     background: 'var(--accent-glow)',
-    border: '1px solid rgba(16,185,129,0.3)',
+    border: '1px solid rgba(217,119,6,0.25)',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
     flexShrink: 0,
   },
@@ -355,7 +355,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 10, fontWeight: 700,
     background: 'var(--accent-glow)',
     color: 'var(--accent)',
-    border: '1px solid rgba(16,185,129,0.25)',
+    border: '1px solid rgba(217,119,6,0.20)',
     padding: '0px 6px', borderRadius: 99, minWidth: 18, textAlign: 'center',
   },
   filterTabs: {

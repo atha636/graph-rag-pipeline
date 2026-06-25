@@ -4,14 +4,14 @@ import { getGraphDataAPI } from '../services/api';
 import type { GraphData, GraphNode, GraphRelationship } from '../types';
 
 const NODE_COLORS: Record<string, string> = {
-  Person:       '#10b981',
-  Organization: '#6366f1',
-  Product:      '#f59e0b',
-  Location:     '#06b6d4',
-  Technology:   '#8b5cf6',
-  Event:        '#ec4899',
-  Entity:       '#10b981',
-  default:      '#64748b',
+  Person:       '#d97706',
+  Organization: '#c2410c',
+  Product:      '#65a30d',
+  Location:     '#0891b2',
+  Technology:   '#a16207',
+  Event:        '#be185d',
+  Entity:       '#d97706',
+  default:      '#78716c',
 };
 
 interface NodePos { x: number; y: number; vx: number; vy: number; }
@@ -203,8 +203,8 @@ export const GraphView: React.FC = () => {
       ctx.moveTo(ps.x, ps.y);
       ctx.quadraticCurveTo(cx, cy, pt.x, pt.y);
       ctx.strokeStyle = isHighlighted
-        ? 'rgba(16,185,129,0.6)'
-        : 'rgba(100,116,139,0.25)';
+        ? 'rgba(217,119,6,0.65)'
+        : 'rgba(120,113,108,0.25)';
       ctx.lineWidth = isHighlighted ? 2 : 1;
       ctx.stroke();
 
@@ -224,13 +224,13 @@ export const GraphView: React.FC = () => {
         ty - arrowLen * Math.sin(angle + 0.4)
       );
       ctx.closePath();
-      ctx.fillStyle = isHighlighted ? 'rgba(16,185,129,0.7)' : 'rgba(100,116,139,0.35)';
+      ctx.fillStyle = isHighlighted ? 'rgba(217,119,6,0.70)' : 'rgba(120,113,108,0.35)';
       ctx.fill();
 
       // Edge label (only when highlighted or zoomed in)
       if (isHighlighted || zoom > 1.2) {
         ctx.font = '9px Inter, sans-serif';
-        ctx.fillStyle = isHighlighted ? 'rgba(16,185,129,0.9)' : 'rgba(100,116,139,0.7)';
+        ctx.fillStyle = isHighlighted ? 'rgba(217,119,6,0.90)' : 'rgba(120,113,108,0.70)';
         ctx.textAlign = 'center';
         ctx.fillText(rel.type, cx, cy - 4);
       }
@@ -565,7 +565,7 @@ const styles: Record<string, React.CSSProperties> = {
   headerActions: { display: 'flex', alignItems: 'center', gap: 6 },
   headerIcon: {
     width: 36, height: 36, borderRadius: 10, background: 'var(--accent-glow)',
-    border: '1px solid rgba(16,185,129,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+    border: '1px solid rgba(217,119,6,0.18)', display: 'flex', alignItems: 'center', justifyContent: 'center',
   },
   headerTitle: { fontSize: 16, fontWeight: 600, color: 'var(--text-primary)' },
   headerSub:   { fontSize: 11.5, color: 'var(--text-muted)', marginTop: 1 },
@@ -604,7 +604,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   searchResults: {
     position: 'absolute', top: 12, left: 12,
-    background: 'var(--accent-glow)', border: '1px solid rgba(16,185,129,0.3)',
+    background: 'var(--accent-glow)', border: '1px solid rgba(217,119,6,0.25)',
     borderRadius: 6, padding: '3px 10px', fontSize: 11.5,
     color: 'var(--accent-text)', fontWeight: 500,
   },

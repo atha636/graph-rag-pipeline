@@ -19,7 +19,7 @@ export const SourceBadge: React.FC<SourceBadgeProps> = ({ source, index }) => {
         style={{
           ...styles.badge,
           background: isGraph ? 'var(--neo4j-bg)' : 'var(--pinecone-bg)',
-          border: `1px solid ${isGraph ? 'rgba(16,185,129,0.3)' : 'rgba(139,92,246,0.3)'}`,
+          border: `1px solid ${isGraph ? 'rgba(217,119,6,0.25)' : 'rgba(194,65,12,0.30)'}`,
           color: isGraph ? 'var(--neo4j)' : 'var(--pinecone)',
         }}
         onClick={() => setOpen(o => !o)}
@@ -33,7 +33,7 @@ export const SourceBadge: React.FC<SourceBadgeProps> = ({ source, index }) => {
       {open && (
         <div style={{
           ...styles.drawer,
-          borderColor: isGraph ? 'rgba(16,185,129,0.2)' : 'rgba(139,92,246,0.2)',
+          borderColor: isGraph ? 'rgba(217,119,6,0.18)' : 'rgba(194,65,12,0.20)',
         }}>
           <div style={styles.drawerHeader}>
             <div style={styles.drawerLeft}>

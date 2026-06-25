@@ -393,7 +393,7 @@ const styles: Record<string, React.CSSProperties> = {
   headerRight: { display: 'flex', alignItems: 'center', gap: 8 },
   headerIcon: {
     width: 34, height: 34, borderRadius: 9,
-    background: 'var(--accent-glow)', border: '1px solid rgba(16,185,129,0.2)',
+    background: 'var(--accent-glow)', border: '1px solid rgba(217,119,6,0.18)',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
   },
   headerTitle: { fontSize: 15, fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.2 },
@@ -419,7 +419,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   welcomeIcon: {
     width: 68, height: 68, borderRadius: 18,
-    background: 'var(--accent-glow)', border: '1px solid rgba(16,185,129,0.25)',
+    background: 'var(--accent-glow)', border: '1px solid rgba(217,119,6,0.20)',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
   },
   welcomeTitle: { fontSize: 24, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.4px' },

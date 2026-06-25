@@ -16,19 +16,19 @@ interface ToastProps {
 }
 
 const ICONS = {
-  success: <CheckCircle size={14} color="#10b981" />,
+  success: <CheckCircle size={14} color="var(--accent)" />,
   error:   <XCircle    size={14} color="#ef4444" />,
-  info:    <Info       size={14} color="#6366f1" />,
+  info:    <Info       size={14} color="var(--secondary)" />,
 };
 
 const COLORS = {
-  success: 'rgba(16,185,129,0.12)',
+  success: 'rgba(217,119,6,0.12)',
   error:   'rgba(239,68,68,0.12)',
   info:    'rgba(99,102,241,0.12)',
 };
 
 const BORDERS = {
-  success: 'rgba(16,185,129,0.25)',
+  success: 'rgba(217,119,6,0.20)',
   error:   'rgba(239,68,68,0.25)',
   info:    'rgba(99,102,241,0.25)',
 };

@@ -18,7 +18,7 @@ interface UploadItem {
 
 const FileIcon = ({ name, size = 20 }: { name: string; size?: number }) => {
   if (name.endsWith('.pdf'))  return <FileType size={size} color="#ef4444" />;
-  if (name.endsWith('.docx')) return <FileText size={size} color="#6366f1" />;
+  if (name.endsWith('.docx')) return <FileText size={size} color="var(--secondary)" />;
   return <File size={size} color="var(--text-muted)" />;
 };
 
@@ -201,7 +201,7 @@ export const UploadView: React.FC<{
                   style={{
                     ...styles.fileCard,
                     borderColor: item.status === 'error'   ? 'rgba(239,68,68,0.3)'
-                               : item.status === 'success' ? 'rgba(16,185,129,0.25)'
+                               : item.status === 'success' ? 'rgba(217,119,6,0.20)'
                                : 'var(--border)',
                   }}
                 >
@@ -333,7 +333,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   headerIcon: {
     width: 36, height: 36, borderRadius: 10, background: 'var(--accent-glow)',
-    border: '1px solid rgba(16,185,129,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+    border: '1px solid rgba(217,119,6,0.18)', display: 'flex', alignItems: 'center', justifyContent: 'center',
     flexShrink: 0,
   },
   headerTitle: { fontSize: 16, fontWeight: 600, color: 'var(--text-primary)' },
@@ -346,7 +346,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   content: { flex: 1, overflowY: 'auto', padding: 24, display: 'flex', flexDirection: 'column', gap: 18 },
   overallBar: {
-    background: 'var(--accent-glow)', border: '1px solid rgba(16,185,129,0.25)',
+    background: 'var(--accent-glow)', border: '1px solid rgba(217,119,6,0.20)',
     borderRadius: 'var(--radius-md)', padding: '10px 14px',
     display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8,
     animation: 'fadeIn 0.2s ease',

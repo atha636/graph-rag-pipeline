@@ -4,100 +4,122 @@
   padding: 0;
 }
 
-/* ── Dark theme (default) ── */
+/* ─────────────────────────────────────────────────
+   DARK THEME  —  warm slate, amber accent
+   No blue tints. Backgrounds use warm near-blacks
+   with slight brown undertones. Accent is amber/
+   gold — editorial, not "AI product".
+───────────────────────────────────────────────── */
 :root {
-  --bg-base: #0f1117;
-  --bg-surface: #161b27;
-  --bg-elevated: #1e2535;
-  --bg-hover: #242d3f;
+  /* Backgrounds — warm near-black, not blue-grey */
+  --bg-base:     #0d0d0b;
+  --bg-surface:  #141412;
+  --bg-elevated: #1c1b18;
+  --bg-hover:    #242320;
 
-  --sidebar-bg: #111827;
-  --sidebar-border: #1f2937;
-  --sidebar-text: #9ca3af;
-  --sidebar-text-active: #f9fafb;
-  --sidebar-item-active: #1e2d40;
-  --sidebar-item-hover: #1a2232;
+  /* Sidebar — slightly warmer dark */
+  --sidebar-bg:          #111110;
+  --sidebar-border:      #1e1d1a;
+  --sidebar-text:        #8c8b84;
+  --sidebar-text-active: #f5f3ef;
+  --sidebar-item-active: #1f1e1b;
+  --sidebar-item-hover:  #191815;
 
-  --accent: #10b981;
-  --accent-dim: #059669;
-  --accent-glow: rgba(16, 185, 129, 0.15);
-  --accent-text: #34d399;
+  /* Accent — warm amber / gold.
+     Not neon, not electric. Feels like candlelight. */
+  --accent:      #d97706;
+  --accent-dim:  #b45309;
+  --accent-glow: rgba(217, 119, 6, 0.12);
+  --accent-text: #fbbf24;
 
-  --secondary: #6366f1;
-  --secondary-dim: rgba(99, 102, 241, 0.2);
+  /* Secondary — muted terracotta / rose-brown.
+     Used for Neo4j badges, secondary actions. */
+  --secondary:     #c2410c;
+  --secondary-dim: rgba(194, 65, 12, 0.18);
 
-  --neo4j: #10b981;
-  --neo4j-bg: rgba(16, 185, 129, 0.12);
-  --pinecone: #8b5cf6;
-  --pinecone-bg: rgba(139, 92, 246, 0.12);
+  /* Source type colors — warm, not neon */
+  --neo4j:     #d97706;           /* amber  — warm graph */
+  --neo4j-bg:  rgba(217,119,6,0.10);
+  --pinecone:  #c2410c;           /* terracotta — vector */
+  --pinecone-bg: rgba(194,65,12,0.10);
 
-  --text-primary: #f1f5f9;
-  --text-secondary: #94a3b8;
-  --text-muted: #64748b;
-  --text-faint: #374151;
+  /* Text — warm whites, not cold */
+  --text-primary:   #f5f3ef;
+  --text-secondary: #a09e96;
+  --text-muted:     #6b6960;
+  --text-faint:     #3a3830;
 
-  --border: #1e2d40;
-  --border-subtle: #1a2535;
+  /* Borders — warm, barely visible */
+  --border:        #252320;
+  --border-subtle: #1e1d1a;
 
-  --success: #10b981;
-  --error: #ef4444;
-  --warning: #f59e0b;
+  /* Feedback */
+  --success: #65a30d;   /* olive green — warm, not mint */
+  --error:   #dc2626;
+  --warning: #d97706;
 
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
-  --radius-xl: 20px;
+  /* Radius — slightly tighter = less "bubbly" */
+  --radius-sm: 5px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
 
   --font-sans: 'Inter', -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
 
-  --shadow-sm: 0 1px 3px rgba(0,0,0,0.3);
-  --shadow-md: 0 4px 12px rgba(0,0,0,0.4);
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.4);
+  --shadow-md: 0 4px 16px rgba(0,0,0,0.5);
 }
 
-/* ── Light theme ── */
+/* ─────────────────────────────────────────────────
+   LIGHT THEME  —  warm paper, not clinical white
+───────────────────────────────────────────────── */
 [data-theme="light"] {
-  --bg-base: #f0f4f8;
-  --bg-surface: #ffffff;
-  --bg-elevated: #f8fafc;
-  --bg-hover: #eef2f7;
+  --bg-base:     #faf9f6;
+  --bg-surface:  #ffffff;
+  --bg-elevated: #f5f4f0;
+  --bg-hover:    #eeecea;
 
-  --sidebar-bg: #1a2235;
-  --sidebar-border: #243047;
-  --sidebar-text: #94a3b8;
-  --sidebar-text-active: #f9fafb;
-  --sidebar-item-active: #243250;
-  --sidebar-item-hover: #1e2d42;
+  /* Sidebar stays dark — gives visual weight */
+  --sidebar-bg:          #181714;
+  --sidebar-border:      #232219;
+  --sidebar-text:        #8c8b84;
+  --sidebar-text-active: #f5f3ef;
+  --sidebar-item-active: #242320;
+  --sidebar-item-hover:  #1c1b18;
 
-  --accent: #059669;
-  --accent-dim: #047857;
-  --accent-glow: rgba(5, 150, 105, 0.1);
-  --accent-text: #047857;
+  --accent:      #b45309;
+  --accent-dim:  #92400e;
+  --accent-glow: rgba(180, 83, 9, 0.10);
+  --accent-text: #92400e;
 
-  --secondary: #4f46e5;
-  --secondary-dim: rgba(79, 70, 229, 0.15);
+  --secondary:     #9a3412;
+  --secondary-dim: rgba(154, 52, 18, 0.12);
 
-  --neo4j: #059669;
-  --neo4j-bg: rgba(5, 150, 105, 0.1);
-  --pinecone: #7c3aed;
-  --pinecone-bg: rgba(124, 58, 237, 0.1);
+  --neo4j:     #b45309;
+  --neo4j-bg:  rgba(180,83,9,0.08);
+  --pinecone:  #9a3412;
+  --pinecone-bg: rgba(154,52,18,0.08);
 
-  --text-primary: #0f172a;
-  --text-secondary: #475569;
-  --text-muted: #94a3b8;
-  --text-faint: #cbd5e1;
+  --text-primary:   #1a1916;
+  --text-secondary: #57534e;
+  --text-muted:     #a8a29e;
+  --text-faint:     #d6d3cd;
 
-  --border: #e2e8f0;
-  --border-subtle: #f1f5f9;
+  --border:        #e5e2dc;
+  --border-subtle: #f0ede8;
 
-  --success: #059669;
-  --error: #dc2626;
-  --warning: #d97706;
+  --success: #4d7c0f;
+  --error:   #b91c1c;
+  --warning: #b45309;
 
-  --shadow-sm: 0 1px 3px rgba(0,0,0,0.08);
-  --shadow-md: 0 4px 12px rgba(0,0,0,0.1);
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.07);
+  --shadow-md: 0 4px 16px rgba(0,0,0,0.09);
 }
 
+/* ─────────────────────────────────────────────────
+   BASE
+───────────────────────────────────────────────── */
 html, body, #root {
   height: 100%;
   width: 100%;
@@ -109,44 +131,75 @@ body {
   color: var(--text-primary);
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   overflow: hidden;
-  transition: background 0.2s ease, color 0.2s ease;
+  transition: background 0.25s ease, color 0.25s ease;
 }
 
-::-webkit-scrollbar { width: 5px; height: 5px; }
+/* Scrollbar */
+::-webkit-scrollbar       { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--bg-elevated); border-radius: 99px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--bg-hover); }
 
+/* Selection */
 ::selection { background: var(--accent-glow); color: var(--accent-text); }
 
-button { cursor: pointer; font-family: var(--font-sans); border: none; background: none; }
-input, textarea { font-family: var(--font-sans); }
+/* Focus ring — warm amber outline, not the browser blue */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
 
+button { cursor: pointer; font-family: var(--font-sans); border: none; background: none; }
+input, textarea { font-family: var(--font-sans); color: var(--text-primary); }
+input::placeholder, textarea::placeholder { color: var(--text-muted); }
+
+/* ─────────────────────────────────────────────────
+   ANIMATIONS
+───────────────────────────────────────────────── */
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(8px); }
+  from { opacity: 0; transform: translateY(6px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 @keyframes slideIn {
-  from { opacity: 0; transform: translateX(-12px); }
+  from { opacity: 0; transform: translateX(-10px); }
   to   { opacity: 1; transform: translateX(0); }
 }
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
 @keyframes pulse-dot {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.3; }
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.4; transform: scale(0.8); }
 }
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
 @keyframes blink {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
+  50%       { opacity: 0; }
 }
 @keyframes theme-toggle {
   0%   { transform: scale(1) rotate(0deg); }
-  50%  { transform: scale(0.85) rotate(180deg); }
+  50%  { transform: scale(0.8) rotate(180deg); }
   100% { transform: scale(1) rotate(360deg); }
 }
+@keyframes shimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position:  200% center; }
+}
 
-.animate-fade-in  { animation: fadeIn 0.3s ease forwards; }
-.animate-slide-in { animation: slideIn 0.25s ease forwards; }
+/* Respect reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+.animate-fade-in  { animation: fadeIn  0.25s ease forwards; }
+.animate-slide-in { animation: slideIn 0.2s  ease forwards; }
+.animate-slide-up { animation: slideUp 0.2s  ease forwards; }

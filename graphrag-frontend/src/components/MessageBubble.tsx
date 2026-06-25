@@ -135,7 +135,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   userBubble: {
     background: 'var(--accent-glow)',
-    border: '1px solid rgba(16,185,129,0.2)',
+    border: '1px solid rgba(217,119,6,0.2)',
     borderRadius: '14px 14px 4px 14px',
     padding: '10px 14px',
     maxWidth: '72%',
@@ -169,7 +169,7 @@ const styles: Record<string, React.CSSProperties> = {
     height: 30,
     borderRadius: '50%',
     background: 'var(--accent-glow)',
-    border: '1px solid rgba(16,185,129,0.25)',
+    border: '1px solid rgba(217,119,6,0.25)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
