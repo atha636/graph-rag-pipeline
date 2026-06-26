@@ -41,6 +41,27 @@ class VectorService:
 
         except Exception as error:
             logger.exception("Failed to initialize Vector Service")
+
+            raise VectorDatabaseError(str(error)) from error
+
+    def batch_embed(self, texts: List[str]) -> List[List[float]]:
+        """
+        Embed a list of texts in a single batched model call.
+        Much faster than calling generate_embedding() in a loop
+        because the sentence-transformer processes all texts in
+        parallel on the same CPU/GPU pass.
+        """
+        try:
+            embeddings = self.model.encode(
+                texts,
+                normalize_embeddings=True,
+                batch_size=64,          # process 64 chunks per forward pass
+                show_progress_bar=False,
+            )
+            return [emb.tolist() for emb in embeddings]
+
+        except Exception as error:
+            logger.exception("Batch embedding failed")
             raise VectorDatabaseError(str(error)) from error
 
     def generate_embedding(self, text: str) -> List[float]:

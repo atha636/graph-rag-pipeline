@@ -1,20 +1,4 @@
-"""
-Graph RAG API — Production-grade FastAPI application.
 
-Endpoints:
-  POST /api/v1/query              — standard query (with cache + memory)
-  POST /api/v1/query/stream       — SSE streaming query
-  POST /api/v1/upload             — document ingestion
-  GET  /api/v1/graph              — knowledge graph data
-  GET  /api/v1/documents          — list indexed documents
-  POST /api/v1/conversations      — create conversation
-  GET  /api/v1/conversations      — list conversations
-  GET  /api/v1/conversations/{id} — get full conversation
-  PUT  /api/v1/conversations/{id} — rename conversation
-  DELETE /api/v1/conversations/{id} — delete conversation
-  GET  /api/v1/stats              — system stats (cache, graph, vectors)
-  GET  /health                    — health check
-"""
 
 import asyncio
 import json
@@ -126,6 +110,13 @@ app = FastAPI(
     version="2.0.0",
     lifespan=lifespan,
 )
+
+# Raise the default upload limit to 100 MB
+# (Starlette default is 1 MB which blocks large PDFs)
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.datastructures import UploadFile as StarletteUploadFile
+import starlette.formparsers as _fp
+_fp.MAX_FILE_SIZE = 100 * 1024 * 1024   # 100 MB
 
 app.middleware("http")(request_id_middleware)
 

@@ -60,9 +60,12 @@ export const App: React.FC = () => {
   }, [addToast]);
 
   useEffect(() => {
-    checkHealth();
-    const id = setInterval(checkHealth, 30_000);
-    return () => clearInterval(id);
+    // Small delay on mount so the backend has time to finish startup
+    // before we fire the first health + stats request. Avoids the
+    // ECONNREFUSED burst in the Vite console on cold start.
+    const init = setTimeout(() => checkHealth(), 1500);
+    const id   = setInterval(checkHealth, 30_000);
+    return () => { clearTimeout(init); clearInterval(id); };
   }, [checkHealth]);
 
   useEffect(() => { localStorage.setItem(STORAGE_KEY, JSON.stringify(documents)); }, [documents]);
@@ -86,8 +89,8 @@ export const App: React.FC = () => {
       return [{ id: docId, name: filename, type: ext, uploadedAt }, ...prev];
     });
     addToast(`"${filename}" processed`, 'success');
-    // Refresh live stats
-    getStatsAPI().then(s => { if (s) setLiveStats(s); });
+    // Stats will refresh on the next health poll (every 30s).
+    // No need to fire an extra request here.
   }, [addToast]);
 
   const handleDeleteDoc = useCallback((id: string) => {
