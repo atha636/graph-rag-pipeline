@@ -86,7 +86,7 @@ export const UploadView: React.FC<{
         ));
         onUploaded(result.filename, result.document_id, result.uploaded_at);
       } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Upload failed , Check backend connection.';
+        const msg = err instanceof Error ? err.message : 'Upload failed,Check backend connection.';
         setItems(prev => prev.map(i =>
           i.id === item.id ? { ...i, status: 'error', error: msg } : i
         ));
