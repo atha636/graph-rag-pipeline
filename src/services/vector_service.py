@@ -127,11 +127,26 @@ class VectorService:
             raise VectorDatabaseError(str(error)) from error
 
     def clear_namespace(self) -> None:
-        self.index.delete(
-            delete_all=True,
-            namespace=settings.PINECONE_NAMESPACE
-        )
-        logger.info("Pinecone namespace cleared")
+        """
+        Delete all vectors in the configured namespace.
+
+        Pinecone raises a 404 NotFoundException when the namespace is
+        empty or has never been written to. We treat that as a no-op
+        (it is already clean) rather than a hard error.
+        """
+        try:
+            self.index.delete(
+                delete_all=True,
+                namespace=settings.PINECONE_NAMESPACE,
+            )
+            logger.info("Pinecone namespace cleared successfully")
+        except Exception as e:
+            if "not found" in str(e).lower() or "404" in str(e):
+                logger.info(
+                    "Namespace is already empty — nothing to clear."
+                )
+            else:
+                raise
 
     def list_documents(self) -> list:
         """
