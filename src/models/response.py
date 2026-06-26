@@ -1,85 +1,56 @@
-from typing import List, Optional
-
+from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
 
 
 class Source(BaseModel):
-    """
-    Represents a single retrieval source shown to the user.
-    """
-
-    source_type: str = Field(
-        description="Source category: 'vector' or 'graph'"
-    )
-
-    content: str = Field(
-        description="Retrieved context text"
-    )
-
-    # Vector metadata
-    document_name: Optional[str] = Field(
-        default=None,
-        description="Original document filename"
-    )
-
-    document_type: Optional[str] = Field(
-        default=None,
-        description="File extension, e.g. .pdf"
-    )
-
-    document_id: Optional[str] = Field(
-        default=None,
-        description="Stable ID assigned at upload time"
-    )
-
-    uploaded_at: Optional[str] = Field(
-        default=None,
-        description="UTC timestamp when the document was uploaded"
-    )
-
-    chunk_id: Optional[int] = Field(
-        default=None,
-        description="Chunk index within the document"
-    )
-
-    chunk_size: Optional[int] = Field(
-        default=None,
-        description="Character length of the chunk"
-    )
-
-    # Scores
-    score: Optional[float] = Field(
-        default=None,
-        description="Pinecone cosine similarity score"
-    )
-
-    relevance_score: Optional[float] = Field(
-        default=None,
-        description="Semantic relevance score from ranking service"
-    )
+    source_type:    str
+    content:        str
+    document_name:  Optional[str]  = None
+    document_type:  Optional[str]  = None
+    document_id:    Optional[str]  = None
+    uploaded_at:    Optional[str]  = None
+    chunk_id:       Optional[int]  = None
+    chunk_size:     Optional[int]  = None
+    score:          Optional[float] = None
+    relevance_score: Optional[float] = None
 
 
 class QueryResponse(BaseModel):
-    """
-    Full API response returned by POST /api/v1/query.
-    """
+    answer:          str
+    documents:       List[str]            = Field(default_factory=list)
+    sources:         List[Source]         = Field(default_factory=list)
+    latency_ms:      float
+    conversation_id: Optional[str]        = None
+    cache_hit:       bool                 = False
+    intent:          Optional[str]        = None
+    entities:        Optional[List[str]]  = None
 
-    answer: str = Field(
-        description="LLM-generated answer"
-    )
 
-    # FIX: main.py returns `documents` but the old model didn't
-    # declare it, causing a Pydantic validation error at runtime.
-    documents: List[str] = Field(
-        default_factory=list,
-        description="Unique document names that contributed to the answer"
-    )
+class ConversationSummary(BaseModel):
+    id:          str
+    title:       str
+    created_at:  str
+    updated_at:  str
+    turn_count:  int
 
-    sources: List[Source] = Field(
-        default_factory=list,
-        description="Ranked retrieval sources used to generate the answer"
-    )
 
-    latency_ms: float = Field(
-        description="End-to-end request latency in milliseconds"
-    )
+class ConversationDetail(ConversationSummary):
+    messages: List[Dict[str, str]] = Field(default_factory=list)
+
+
+class DocumentRecord(BaseModel):
+    document_id:   str
+    document_name: str
+    document_type: str
+    uploaded_at:   Optional[str] = None
+    chunk_count:   int           = 0
+
+
+class StatsResponse(BaseModel):
+    vector_count:       int
+    graph_node_count:   int
+    graph_rel_count:    int
+    document_count:     int
+    cache_size:         int
+    cache_hit_rate:     float
+    cache_total_requests: int

@@ -3,82 +3,71 @@ import { Sidebar } from './components/Sidebar';
 import { ChatView } from './pages/ChatView';
 import { UploadView } from './pages/UploadView';
 import { GraphView } from './pages/GraphView';
+import { DocumentsView } from './pages/DocumentsView';
 import { ToastContainer, useToast } from './components/Toast';
-import { healthCheckAPI } from './services/api';
-import type { Document, View, SessionStats } from './types';
+import { healthCheckAPI, getStatsAPI } from './services/api';
+import type { Document, View, SessionStats, StatsData } from './types';
 import { useTheme } from './components/ThemeToggle';
 
-const STORAGE_KEY  = 'graphrag_documents';
-const STATS_KEY    = 'graphrag_stats';
+const STORAGE_KEY = 'graphrag_documents';
+const STATS_KEY   = 'graphrag_stats';
 
-const loadStoredDocs = (): Document[] => {
-  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '[]'); }
-  catch { return []; }
-};
-
-const loadStoredStats = (): SessionStats => {
-  try {
-    return JSON.parse(localStorage.getItem(STATS_KEY) ?? 'null')
-      ?? { totalQueries: 0, avgLatencyMs: 0, totalSources: 0 };
-  } catch {
-    return { totalQueries: 0, avgLatencyMs: 0, totalSources: 0 };
-  }
+const loadStored = <T,>(key: string, fallback: T): T => {
+  try { return JSON.parse(localStorage.getItem(key) ?? 'null') ?? fallback; }
+  catch { return fallback; }
 };
 
 export const App: React.FC = () => {
   const { theme, toggle: toggleTheme } = useTheme();
   const { toasts, addToast, removeToast } = useToast();
 
-  const [view,      setView]      = useState<View>('chat');
-  const [documents, setDocuments] = useState<Document[]>(loadStoredDocs);
-  const [isOnline,  setIsOnline]  = useState(false);
-  const [stats,     setStats]     = useState<SessionStats>(loadStoredStats);
+  const [view,       setView]       = useState<View>('chat');
+  const [documents,  setDocuments]  = useState<Document[]>(loadStored(STORAGE_KEY, []));
+  const [isOnline,   setIsOnline]   = useState(false);
+  const [stats,      setStats]      = useState<SessionStats>(loadStored(STATS_KEY, { totalQueries: 0, avgLatencyMs: 0, totalSources: 0 }));
+  const [liveStats,  setLiveStats]  = useState<StatsData | null>(null);
 
   const prevOnline = useRef<boolean | null>(null);
 
-  // Keyboard shortcuts ⌘1 / ⌘2 / ⌘3
+  // Global keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      const isMac = navigator.platform.toUpperCase().includes('MAC');
-      const mod   = isMac ? e.metaKey : e.ctrlKey;
+      const mod = navigator.platform.includes('Mac') ? e.metaKey : e.ctrlKey;
       if (!mod) return;
-      if (e.key === '1') { e.preventDefault(); setView('chat');   }
+      if (e.key === '1') { e.preventDefault(); setView('chat'); }
       if (e.key === '2') { e.preventDefault(); setView('upload'); }
-      if (e.key === '3') { e.preventDefault(); setView('graph');  }
+      if (e.key === '3') { e.preventDefault(); setView('graph'); }
+      if (e.key === '4') { e.preventDefault(); setView('documents'); }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, []);
 
-  // Health polling
   const checkHealth = useCallback(async () => {
     const ok = await healthCheckAPI();
     setIsOnline(ok);
-
     if (prevOnline.current !== null) {
-      if (prevOnline.current && !ok) addToast('Backend disconnected', 'error');
-      if (!prevOnline.current && ok) addToast('Backend connected', 'success', 2500);
+      if (prevOnline.current && !ok)  addToast('Backend disconnected', 'error');
+      if (!prevOnline.current && ok)  addToast('Backend connected', 'success', 2500);
     }
     prevOnline.current = ok;
+
+    // Fetch live stats from backend when online
+    if (ok) {
+      const s = await getStatsAPI();
+      if (s) setLiveStats(s);
+    }
   }, [addToast]);
 
   useEffect(() => {
     checkHealth();
-    const id = setInterval(checkHealth, 20_000);
+    const id = setInterval(checkHealth, 30_000);
     return () => clearInterval(id);
   }, [checkHealth]);
 
-  // Persist documents
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(documents));
-  }, [documents]);
+  useEffect(() => { localStorage.setItem(STORAGE_KEY, JSON.stringify(documents)); }, [documents]);
+  useEffect(() => { localStorage.setItem(STATS_KEY,   JSON.stringify(stats));     }, [stats]);
 
-  // Persist stats
-  useEffect(() => {
-    localStorage.setItem(STATS_KEY, JSON.stringify(stats));
-  }, [stats]);
-
-  // Called by ChatView after each successful query
   const handleStatsUpdate = useCallback((latencyMs: number, sourceCount: number) => {
     setStats(prev => {
       const n = prev.totalQueries + 1;
@@ -96,7 +85,9 @@ export const App: React.FC = () => {
       if (prev.find(d => d.id === docId)) return prev;
       return [{ id: docId, name: filename, type: ext, uploadedAt }, ...prev];
     });
-    addToast(`"${filename}" processed successfully`, 'success');
+    addToast(`"${filename}" processed`, 'success');
+    // Refresh live stats
+    getStatsAPI().then(s => { if (s) setLiveStats(s); });
   }, [addToast]);
 
   const handleDeleteDoc = useCallback((id: string) => {
@@ -119,12 +110,14 @@ export const App: React.FC = () => {
         theme={theme}
         onToggleTheme={toggleTheme}
         stats={stats}
+        liveStats={liveStats}
       />
 
       <main style={styles.main}>
-        {view === 'chat'   && <ChatView onStatsUpdate={handleStatsUpdate} />}
-        {view === 'upload' && <UploadView onUploaded={handleUploaded} />}
-        {view === 'graph'  && <GraphView />}
+        {view === 'chat'      && <ChatView onStatsUpdate={handleStatsUpdate} />}
+        {view === 'upload'    && <UploadView onUploaded={handleUploaded} />}
+        {view === 'graph'     && <GraphView />}
+        {view === 'documents' && <DocumentsView />}
       </main>
 
       <ToastContainer toasts={toasts} onRemove={removeToast} />
