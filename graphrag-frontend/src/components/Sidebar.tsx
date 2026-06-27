@@ -176,7 +176,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <div style={styles.emptyDocs}>
               <File size={20} color="var(--text-faint)" />
               <p>No documents yet.</p>
-              <p style={{ fontSize: 10.5 }}>Upload files to get started.</p>
+              <p style={{ fontSize: 10.5 }}>Upload files to get start.</p>
             </div>
           )}
           {filteredDocs.map(doc => (
