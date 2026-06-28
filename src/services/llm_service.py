@@ -1,12 +1,4 @@
-"""
-LLM Service — Groq-backed answer generation.
 
-Upgrades over original:
-- Multi-turn conversation history injected into every prompt
-- Streaming support (returns generator for SSE endpoint)
-- Richer system prompt with explicit chain-of-thought instruction
-- Token usage logging for cost tracking
-"""
 
 from typing import List, Dict, Optional, Generator
 
