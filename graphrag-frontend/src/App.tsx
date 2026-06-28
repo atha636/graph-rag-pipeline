@@ -21,11 +21,14 @@ export const App: React.FC = () => {
   const { theme, toggle: toggleTheme } = useTheme();
   const { toasts, addToast, removeToast } = useToast();
 
-  const [view,       setView]       = useState<View>('chat');
-  const [documents,  setDocuments]  = useState<Document[]>(loadStored(STORAGE_KEY, []));
-  const [isOnline,   setIsOnline]   = useState(false);
-  const [stats,      setStats]      = useState<SessionStats>(loadStored(STATS_KEY, { totalQueries: 0, avgLatencyMs: 0, totalSources: 0 }));
-  const [liveStats,  setLiveStats]  = useState<StatsData | null>(null);
+  const [view,         setView]         = useState<View>('chat');
+  const [documents,    setDocuments]    = useState<Document[]>(loadStored(STORAGE_KEY, []));
+  const [isOnline,     setIsOnline]     = useState(false);
+  const [stats,        setStats]        = useState<SessionStats>(
+    loadStored(STATS_KEY, { totalQueries: 0, avgLatencyMs: 0, totalSources: 0 })
+  );
+  const [liveStats,    setLiveStats]    = useState<StatsData | null>(null);
+  const [activeConvId, setActiveConvId] = useState<string | undefined>();
 
   const prevOnline = useRef<boolean | null>(null);
 
@@ -34,9 +37,9 @@ export const App: React.FC = () => {
     const handler = (e: KeyboardEvent) => {
       const mod = navigator.platform.includes('Mac') ? e.metaKey : e.ctrlKey;
       if (!mod) return;
-      if (e.key === '1') { e.preventDefault(); setView('chat'); }
-      if (e.key === '2') { e.preventDefault(); setView('upload'); }
-      if (e.key === '3') { e.preventDefault(); setView('graph'); }
+      if (e.key === '1') { e.preventDefault(); setView('chat');      }
+      if (e.key === '2') { e.preventDefault(); setView('upload');    }
+      if (e.key === '3') { e.preventDefault(); setView('graph');     }
       if (e.key === '4') { e.preventDefault(); setView('documents'); }
     };
     window.addEventListener('keydown', handler);
@@ -46,13 +49,13 @@ export const App: React.FC = () => {
   const checkHealth = useCallback(async () => {
     const ok = await healthCheckAPI();
     setIsOnline(ok);
+
     if (prevOnline.current !== null) {
       if (prevOnline.current && !ok)  addToast('Backend disconnected', 'error');
       if (!prevOnline.current && ok)  addToast('Backend connected', 'success', 2500);
     }
     prevOnline.current = ok;
 
-    // Fetch live stats from backend when online
     if (ok) {
       const s = await getStatsAPI();
       if (s) setLiveStats(s);
@@ -60,9 +63,6 @@ export const App: React.FC = () => {
   }, [addToast]);
 
   useEffect(() => {
-    // Small delay on mount so the backend has time to finish startup
-    // before we fire the first health + stats request. Avoids the
-    // ECONNREFUSED burst in the Vite console on cold start.
     const init = setTimeout(() => checkHealth(), 1500);
     const id   = setInterval(checkHealth, 30_000);
     return () => { clearTimeout(init); clearInterval(id); };
@@ -89,8 +89,6 @@ export const App: React.FC = () => {
       return [{ id: docId, name: filename, type: ext, uploadedAt }, ...prev];
     });
     addToast(`"${filename}" processed`, 'success');
-    // Stats will refresh on the next health poll (every 30s).
-    // No need to fire an extra request here.
   }, [addToast]);
 
   const handleDeleteDoc = useCallback((id: string) => {
@@ -100,6 +98,16 @@ export const App: React.FC = () => {
       return prev.filter(d => d.id !== id);
     });
   }, [addToast]);
+
+  const handleSelectConv = useCallback((id: string) => {
+    setActiveConvId(id);
+    setView('chat');
+  }, []);
+
+  const handleNewConv = useCallback(() => {
+    setActiveConvId(undefined);
+    setView('chat');
+  }, []);
 
   return (
     <div style={styles.app}>
@@ -114,10 +122,19 @@ export const App: React.FC = () => {
         onToggleTheme={toggleTheme}
         stats={stats}
         liveStats={liveStats}
+        activeConvId={activeConvId}
+        onSelectConv={handleSelectConv}
+        onNewConv={handleNewConv}
       />
 
       <main style={styles.main}>
-        {view === 'chat'      && <ChatView onStatsUpdate={handleStatsUpdate} />}
+        {view === 'chat'      && (
+          <ChatView
+            onStatsUpdate={handleStatsUpdate}
+            conversationId={activeConvId}
+            key={activeConvId ?? 'default'}
+          />
+        )}
         {view === 'upload'    && <UploadView onUploaded={handleUploaded} />}
         {view === 'graph'     && <GraphView />}
         {view === 'documents' && <DocumentsView />}

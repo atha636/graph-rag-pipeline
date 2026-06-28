@@ -172,3 +172,13 @@ export const healthCheckAPI = async (): Promise<boolean> => {
   try { await api.get('/health', { timeout: 5000 }); return true; }
   catch { return false; }
 };
+
+// ── Summaries ─────────────────────────────────────────────────────
+export const getSummariesAPI = async (): Promise<Array<{
+  document_id: string; document_name: string; summary: string;
+}>> => {
+  try {
+    const { data } = await api.get('/api/v1/summaries');
+    return data;
+  } catch { return []; }
+};

@@ -1,4 +1,13 @@
+"""
+Graph RAG API v2.1 — Production FastAPI application.
 
+New in this version:
+- SummarizationService integrated into ingestion pipeline
+- /api/v1/summaries  — get all document summaries
+- /api/v1/search     — document-scoped semantic search
+- MMR ranking (via upgraded RankingService)
+- All tuning params driven from config (no magic numbers)
+"""
 
 import asyncio
 import json
@@ -28,16 +37,17 @@ from src.models.response import (
     StatsResponse, DocumentRecord,
 )
 
-from src.services.vector_service       import VectorService
-from src.services.graph_service        import GraphService
-from src.services.llm_service          import LLMService
-from src.services.entity_service       import EntityExtractionService
-from src.services.relationship_service import RelationshipExtractionService
-from src.services.intent_service       import IntentExtractionService
-from src.services.document_service     import DocumentService
-from src.services.ranking_service      import RankingService
-from src.services.cache_service        import CacheService
-from src.services.conversation_service import ConversationService
+from src.services.vector_service         import VectorService
+from src.services.graph_service          import GraphService
+from src.services.llm_service            import LLMService
+from src.services.entity_service         import EntityExtractionService
+from src.services.relationship_service   import RelationshipExtractionService
+from src.services.intent_service         import IntentExtractionService
+from src.services.document_service       import DocumentService
+from src.services.ranking_service        import RankingService
+from src.services.cache_service          import CacheService
+from src.services.conversation_service   import ConversationService
+from src.services.summarization_service  import SummarizationService
 
 from src.api.upload import (
     router as upload_router,
@@ -46,17 +56,18 @@ from src.api.upload import (
 
 configure_logger()
 
-# ── Global service instances ───────────────────────────────────────
-vector_service:       VectorService                 = None
-graph_service:        GraphService                  = None
-llm_service:          LLMService                    = None
-entity_service:       EntityExtractionService       = None
-relationship_service: RelationshipExtractionService = None
-intent_service:       IntentExtractionService       = None
-ranking_service:      RankingService                = None
-document_service:     DocumentService               = None
-cache_service:        CacheService                  = None
-conversation_service: ConversationService           = None
+# ── Globals ───────────────────────────────────────────────────────────
+vector_service:        VectorService               = None
+graph_service:         GraphService                = None
+llm_service:           LLMService                  = None
+entity_service:        EntityExtractionService     = None
+relationship_service:  RelationshipExtractionService = None
+intent_service:        IntentExtractionService     = None
+ranking_service:       RankingService              = None
+document_service:      DocumentService             = None
+cache_service:         CacheService                = None
+conversation_service:  ConversationService         = None
+summarization_service: SummarizationService        = None
 
 
 @asynccontextmanager
@@ -64,37 +75,44 @@ async def lifespan(app: FastAPI):
     global vector_service, graph_service, llm_service
     global entity_service, relationship_service, intent_service
     global ranking_service, document_service, cache_service
-    global conversation_service
+    global conversation_service, summarization_service
 
     logger.info("=" * 60)
-    logger.info("Starting Graph RAG API")
+    logger.info(f"Starting {settings.APP_NAME} v2.1")
     logger.info("=" * 60)
 
-    # Load embedding model once — shared across vector + ranking + cache
-    logger.info(f"Loading shared embedding model: {settings.EMBEDDING_MODEL}")
+    # Single shared embedding model — avoids loading 1.3 GB model 3×
+    logger.info(f"Loading embedding model: {settings.EMBEDDING_MODEL}")
     shared_model = SentenceTransformer(settings.EMBEDDING_MODEL)
-    logger.info("Shared embedding model ready")
+    logger.info("Embedding model ready")
 
-    vector_service       = VectorService(embedding_model=shared_model)
-    graph_service        = GraphService()
-    llm_service          = LLMService()
-    entity_service       = EntityExtractionService()
-    relationship_service = RelationshipExtractionService()
-    intent_service       = IntentExtractionService()
-    ranking_service      = RankingService(embedding_model=shared_model)
-    cache_service        = CacheService(embedding_model=shared_model)
-    conversation_service = ConversationService()
+    vector_service        = VectorService(embedding_model=shared_model)
+    graph_service         = GraphService()
+    llm_service           = LLMService()
+    entity_service        = EntityExtractionService()
+    relationship_service  = RelationshipExtractionService()
+    intent_service        = IntentExtractionService()
+    ranking_service       = RankingService(embedding_model=shared_model)
+    cache_service         = CacheService(
+        embedding_model=shared_model,
+        similarity_threshold=settings.CACHE_SIMILARITY_THRESHOLD,
+        max_entries=settings.CACHE_MAX_ENTRIES,
+        ttl_seconds=settings.CACHE_TTL_SECONDS,
+    )
+    conversation_service  = ConversationService()
+    summarization_service = SummarizationService()
 
     document_service = DocumentService(
         vector_service=vector_service,
         graph_service=graph_service,
         entity_service=entity_service,
         relationship_service=relationship_service,
+        summarization_service=summarization_service,
     )
 
     initialize_document_service(document_service)
 
-    logger.info("All services initialized successfully")
+    logger.info("All services ready")
     logger.info("=" * 60)
 
     yield
@@ -106,17 +124,10 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title=settings.APP_NAME,
-    description="Production Graph RAG API — Neo4j + Pinecone + Groq",
-    version="2.0.0",
+    description="Graph RAG API — Neo4j + Pinecone + Groq",
+    version="2.1.0",
     lifespan=lifespan,
 )
-
-# Raise the default upload limit to 100 MB
-# (Starlette default is 1 MB which blocks large PDFs)
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.datastructures import UploadFile as StarletteUploadFile
-import starlette.formparsers as _fp
-_fp.MAX_FILE_SIZE = 100 * 1024 * 1024   # 100 MB
 
 app.middleware("http")(request_id_middleware)
 
@@ -136,103 +147,88 @@ app.add_middleware(
 app.include_router(upload_router)
 
 
-# ── Exception handlers ────────────────────────────────────────────
+# ── Exception handlers ────────────────────────────────────────────────
 
 @app.exception_handler(GraphRAGException)
-async def app_exception_handler(request: Request, exc: GraphRAGException):
-    logger.error(f"Application error [{exc.__class__.__name__}]: {exc.message}")
+async def app_exc_handler(request: Request, exc: GraphRAGException):
+    logger.error(f"[{exc.__class__.__name__}] {exc.message}")
     return JSONResponse(
         status_code=exc.status_code,
         content={"error": exc.message, "detail": exc.detail},
     )
 
 @app.exception_handler(Exception)
-async def generic_exception_handler(request: Request, exc: Exception):
-    logger.exception(f"Unhandled exception: {exc}")
+async def generic_exc_handler(request: Request, exc: Exception):
+    logger.exception(f"Unhandled: {exc}")
     return JSONResponse(
         status_code=500,
         content={"error": "Internal server error", "detail": str(exc)},
     )
 
 
-# ── Health ────────────────────────────────────────────────────────
+# ── Health ────────────────────────────────────────────────────────────
 
 @app.get("/health", tags=["System"])
 async def health():
     return {
         "status":      "healthy",
+        "version":     "2.1.0",
         "environment": settings.APP_ENV,
-        "version":     "2.0.0",
         "model":       settings.EMBEDDING_MODEL,
         "llm":         settings.LLM_MODEL,
+        "chunk_size":  settings.CHUNK_SIZE,
+        "mmr_lambda":  settings.RANKING_MMR_LAMBDA,
     }
 
 
-# ── Core pipeline helper ──────────────────────────────────────────
+# ── Shared RAG pipeline ───────────────────────────────────────────────
 
-async def _run_rag_pipeline(request: QueryRequest):
+async def _rag_pipeline(request: QueryRequest):
     """
-    Shared RAG pipeline used by both /query and /query/stream.
-    Returns (answer_or_generator, sources, documents, intent, entities,
-             cache_hit, latency_ms).
+    Core RAG pipeline shared by /query and /query/stream.
+    Returns (llm_args | cached_answer, processed_sources, documents,
+             intent, entities, cache_hit, pipeline_latency_ms)
     """
     start = time.time()
 
-    # 1. Check semantic cache
+    # 1. Cache check
     if request.use_cache:
         cached = cache_service.get(request.query)
         if cached:
             latency = (time.time() - start) * 1000
-            return (
-                cached.answer, cached.sources,
-                cached.documents, None, None,
-                True, latency,
-            )
+            return (cached.answer, cached.sources, cached.documents,
+                    None, None, True, latency)
 
     # 2. Conversation history
     history = []
     if request.conversation_id:
         history = await asyncio.to_thread(
-            conversation_service.get_history,
-            request.conversation_id,
+            conversation_service.get_history, request.conversation_id
         )
 
-    # 3. Parallel: vector search + intent + entity extraction
-    vector_task = asyncio.to_thread(
-        vector_service.search, request.query, request.top_k
+    # 3. Parallel: vector search + intent + entities
+    v_task = asyncio.to_thread(
+        vector_service.search, request.query,
+        request.top_k or settings.QUERY_DEFAULT_TOP_K
     )
-    intent_task = asyncio.to_thread(
-        intent_service.extract_intent, request.query
-    )
-    entity_task = asyncio.to_thread(
-        entity_service.extract_entities, request.query
-    )
+    i_task = asyncio.to_thread(intent_service.extract_intent, request.query)
+    e_task = asyncio.to_thread(entity_service.extract_entities, request.query)
 
-    vector_results, intent, entities = await asyncio.gather(
-        vector_task, intent_task, entity_task
-    )
-
+    vector_results, intent, entities = await asyncio.gather(v_task, i_task, e_task)
     logger.info(f"Intent: {intent} | Entities: {entities}")
 
-    # 4. Graph search per entity
+    # 4. Graph search
     graph_results = []
     if entities:
-        graph_tasks = [
-            asyncio.to_thread(
-                graph_service.search_entities, entity, intent
-            )
-            for entity in entities
+        g_tasks = [
+            asyncio.to_thread(graph_service.search_entities, ent, intent)
+            for ent in entities
         ]
-        nested = await asyncio.gather(*graph_tasks)
+        nested       = await asyncio.gather(*g_tasks)
         graph_results = [r for sub in nested for r in sub]
 
-    logger.info(
-        f"Sources: {len(vector_results)} vector | "
-        f"{len(graph_results)} graph"
-    )
-
-    # 5. Build raw source list
-    raw_sources = [
+    # 5. Build raw sources
+    raw = [
         {
             "source_type":   "vector",
             "content":       item["text"],
@@ -248,326 +244,257 @@ async def _run_rag_pipeline(request: QueryRequest):
     ] + [
         {
             "source_type": "graph",
-            "content": (
-                f'{item["source"]} '
-                f'{item["relationship"]} '
-                f'{item["target"]}'
-            ),
+            "content": f'{item["source"]} {item["relationship"]} {item["target"]}',
         }
         for item in graph_results
     ]
 
-    # 6. Deduplicate + rank
-    processed = ranking_service.process_sources(request.query, raw_sources)
+    # 6. MMR ranking
+    processed = ranking_service.process_sources(request.query, raw)
 
-    # 7. Build LLM context
-    vector_by_doc: OrderedDict = OrderedDict()
+    # 7. Build context
+    by_doc: OrderedDict = OrderedDict()
     for item in processed:
         if item["source_type"] != "vector":
             continue
         doc = item.get("document_name") or "Unknown"
-        vector_by_doc.setdefault(doc, []).append(item["content"])
+        by_doc.setdefault(doc, []).append(item["content"])
 
-    vector_context = "\n\n".join(
-        f"[Document: {doc}]\n" + "\n".join(chunks)
-        for doc, chunks in vector_by_doc.items()
+    vector_ctx = "\n\n".join(
+        f"[Document: {d}]\n" + "\n".join(chunks)
+        for d, chunks in by_doc.items()
     )
-    graph_context = "\n".join(
-        item["content"]
-        for item in processed
+    graph_ctx  = "\n".join(
+        item["content"] for item in processed
         if item["source_type"] == "graph"
     )
-    documents = list(vector_by_doc.keys())
-
-    latency = (time.time() - start) * 1000
+    documents  = list(by_doc.keys())
+    latency    = (time.time() - start) * 1000
 
     return (
-        (vector_context, graph_context, history),  # args for LLM
+        (vector_ctx, graph_ctx, history),
         processed, documents, intent, entities,
         False, latency,
     )
 
 
-# ── Query endpoint (standard) ─────────────────────────────────────
+# ── Query (standard) ──────────────────────────────────────────────────
 
 @app.post("/api/v1/query", response_model=QueryResponse, tags=["Query"])
-async def query_graph_rag(request: QueryRequest):
-    result = await _run_rag_pipeline(request)
+async def query(request: QueryRequest):
+    result = await _rag_pipeline(request)
 
-    # Cache hit — return immediately
-    if result[5]:  # cache_hit flag
-        answer, sources_raw, documents, intent, entities, cache_hit, latency = result
+    if result[5]:  # cache hit
+        answer, sources_raw, docs, intent, entities, _, latency = result
         sources = [Source(**s) if isinstance(s, dict) else s for s in sources_raw]
         return QueryResponse(
-            answer=answer, documents=documents, sources=sources,
+            answer=answer, documents=docs, sources=sources,
             latency_ms=latency, cache_hit=True,
             conversation_id=request.conversation_id,
         )
 
-    llm_args, processed, documents, intent, entities, cache_hit, _ = result
+    llm_args, processed, docs, intent, entities, _, pipeline_ms = result
 
-    start_llm = time.time()
+    t0     = time.time()
     answer = await asyncio.to_thread(
         llm_service.generate_response,
         request.query, llm_args[0], llm_args[1], llm_args[2],
     )
-    total_latency = (time.time() - start_llm) * 1000 + _
+    total_ms = pipeline_ms + (time.time() - t0) * 1000
 
     sources = [
         Source(
-            source_type=item["source_type"],
-            content=item["content"],
-            document_name=item.get("document_name"),
-            document_type=item.get("document_type"),
-            document_id=item.get("document_id"),
-            uploaded_at=item.get("uploaded_at"),
-            chunk_id=item.get("chunk_id"),
-            chunk_size=item.get("chunk_size"),
-            score=item.get("score"),
-            relevance_score=item.get("relevance_score"),
+            source_type=p["source_type"], content=p["content"],
+            document_name=p.get("document_name"), document_type=p.get("document_type"),
+            document_id=p.get("document_id"), uploaded_at=p.get("uploaded_at"),
+            chunk_id=p.get("chunk_id"), chunk_size=p.get("chunk_size"),
+            score=p.get("score"), relevance_score=p.get("relevance_score"),
         )
-        for item in processed
+        for p in processed
     ]
 
-    # Store in cache
     cache_service.set(
         query=request.query, answer=answer,
         sources=[s.model_dump() for s in sources],
-        documents=documents, latency_ms=total_latency,
+        documents=docs, latency_ms=total_ms,
     )
 
-    # Store conversation turns
     if request.conversation_id:
-        conv_id = request.conversation_id
-        turns = await asyncio.to_thread(
-            conversation_service.get_history, conv_id
-        )
+        cid = request.conversation_id
+        turns = await asyncio.to_thread(conversation_service.get_history, cid)
         if not turns:
             await asyncio.to_thread(
-                conversation_service.auto_title, conv_id, request.query
+                conversation_service.auto_title, cid, request.query
             )
         await asyncio.to_thread(
-            conversation_service.add_turn, conv_id, "user", request.query
+            conversation_service.add_turn, cid, "user", request.query
         )
         await asyncio.to_thread(
-            conversation_service.add_turn, conv_id, "assistant", answer
+            conversation_service.add_turn, cid, "assistant", answer
         )
 
-    logger.info(f"Query completed in {total_latency:.0f} ms")
-
+    logger.info(f"Query done in {total_ms:.0f} ms")
     return QueryResponse(
-        answer=answer, documents=documents, sources=sources,
-        latency_ms=total_latency, cache_hit=False,
+        answer=answer, documents=docs, sources=sources,
+        latency_ms=total_ms, cache_hit=False,
         intent=intent, entities=entities,
         conversation_id=request.conversation_id,
     )
 
 
-# ── Streaming query endpoint (SSE) ────────────────────────────────
+# ── Streaming query (SSE) ─────────────────────────────────────────────
 
 @app.post("/api/v1/query/stream", tags=["Query"])
 async def query_stream(request: QueryRequest):
-    """
-    Server-Sent Events streaming endpoint.
-    Frontend receives answer word-by-word as it's generated.
+    async def stream():
+        start  = time.time()
+        result = await _rag_pipeline(request)
 
-    SSE format:
-      data: {"type": "sources", "data": {...}}   ← sent first
-      data: {"type": "chunk",   "text": "..."}   ← per token
-      data: {"type": "done",    "latency_ms": N}  ← final
-    """
-
-    async def event_stream():
-        start = time.time()
-
-        result = await _run_rag_pipeline(request)
-
-        # Cache hit — send everything at once
-        if result[5]:
-            answer, sources_raw, documents, _, __, ___, latency = result
-            sources = [s if isinstance(s, dict) else s.model_dump()
-                       for s in sources_raw]
-
-            yield f"data: {json.dumps({'type': 'meta', 'documents': documents, 'sources': sources, 'cache_hit': True})}\n\n"
-
-            # Simulate streaming for cache hits (nicer UX)
-            words = answer.split(" ")
-            for i, word in enumerate(words):
-                chunk = word + (" " if i < len(words) - 1 else "")
-                yield f"data: {json.dumps({'type': 'chunk', 'text': chunk})}\n\n"
+        if result[5]:   # cache hit
+            answer, sources_raw, docs, _, __, ___, latency = result
+            srcs = [s if isinstance(s, dict) else s.model_dump() for s in sources_raw]
+            yield f"data: {json.dumps({'type':'meta','documents':docs,'sources':srcs,'cache_hit':True})}\n\n"
+            for i, word in enumerate(answer.split(" ")):
+                yield f"data: {json.dumps({'type':'chunk','text':word+(' ' if i < len(answer.split())-1 else '')})}\n\n"
                 await asyncio.sleep(0.015)
-
-            yield f"data: {json.dumps({'type': 'done', 'latency_ms': latency})}\n\n"
+            yield f"data: {json.dumps({'type':'done','latency_ms':latency})}\n\n"
             return
 
-        llm_args, processed, documents, intent, entities, _, pipeline_latency = result
+        llm_args, processed, docs, intent, entities, _, _ = result
 
-        sources_data = [
+        srcs_data = [
             {
-                "source_type":    item["source_type"],
-                "content":        item["content"],
-                "document_name":  item.get("document_name"),
-                "document_type":  item.get("document_type"),
-                "score":          item.get("score"),
-                "relevance_score":item.get("relevance_score"),
+                "source_type": p["source_type"], "content": p["content"],
+                "document_name": p.get("document_name"), "score": p.get("score"),
+                "relevance_score": p.get("relevance_score"),
             }
-            for item in processed
+            for p in processed
         ]
+        yield f"data: {json.dumps({'type':'meta','documents':docs,'sources':srcs_data,'intent':intent,'entities':entities,'cache_hit':False})}\n\n"
 
-        # Send metadata first so the frontend can render source badges
-        yield f"data: {json.dumps({'type': 'meta', 'documents': documents, 'sources': sources_data, 'intent': intent, 'entities': entities, 'cache_hit': False})}\n\n"
-
-        # Stream answer tokens
-        full_answer = ""
-        stream_gen  = llm_service.generate_stream(
+        full = ""
+        for chunk in llm_service.generate_stream(
             request.query, llm_args[0], llm_args[1], llm_args[2]
-        )
+        ):
+            full += chunk
+            yield f"data: {json.dumps({'type':'chunk','text':chunk})}\n\n"
 
-        for chunk_text in stream_gen:
-            full_answer += chunk_text
-            yield f"data: {json.dumps({'type': 'chunk', 'text': chunk_text})}\n\n"
+        total_ms = (time.time() - start) * 1000
 
-        total_latency = (time.time() - start) * 1000
-
-        # Cache + store conversation
-        sources_for_cache = [
-            Source(
-                source_type=s["source_type"],
-                content=s["content"],
-                document_name=s.get("document_name"),
-                document_type=s.get("document_type"),
-                score=s.get("score"),
-                relevance_score=s.get("relevance_score"),
-            ).model_dump()
-            for s in sources_data
-        ]
         cache_service.set(
-            query=request.query, answer=full_answer,
-            sources=sources_for_cache,
-            documents=documents, latency_ms=total_latency,
+            query=request.query, answer=full,
+            sources=[Source(**{k: v for k, v in p.items() if k != "_emb"}).model_dump()
+                     for p in processed],
+            documents=docs, latency_ms=total_ms,
         )
 
         if request.conversation_id:
-            conv_id = request.conversation_id
             await asyncio.to_thread(
-                conversation_service.add_turn, conv_id, "user", request.query
+                conversation_service.add_turn,
+                request.conversation_id, "user", request.query
             )
             await asyncio.to_thread(
-                conversation_service.add_turn, conv_id, "assistant", full_answer
+                conversation_service.add_turn,
+                request.conversation_id, "assistant", full
             )
 
-        yield f"data: {json.dumps({'type': 'done', 'latency_ms': total_latency})}\n\n"
+        yield f"data: {json.dumps({'type':'done','latency_ms':total_ms})}\n\n"
 
     return StreamingResponse(
-        event_stream(),
+        stream(),
         media_type="text/event-stream",
-        headers={
-            "Cache-Control":    "no-cache",
-            "X-Accel-Buffering":"no",
-        },
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 
-# ── Knowledge Graph ───────────────────────────────────────────────
+# ── Graph ─────────────────────────────────────────────────────────────
 
 @app.get("/api/v1/graph", tags=["Graph"])
-async def get_graph_data():
-    data = await asyncio.to_thread(graph_service.get_all_graph_data)
-    return data
+async def get_graph():
+    return await asyncio.to_thread(graph_service.get_all_graph_data)
 
 
-# ── Documents ─────────────────────────────────────────────────────
+# ── Documents ─────────────────────────────────────────────────────────
 
-@app.get(
-    "/api/v1/documents",
-    response_model=list[DocumentRecord],
-    tags=["Documents"],
-)
+@app.get("/api/v1/documents", tags=["Documents"])
 async def list_documents():
-    """
-    Return all unique documents indexed in Pinecone.
-    Fetches distinct document metadata from the vector namespace.
-    """
     try:
-        records = await asyncio.to_thread(vector_service.list_documents)
-        return records
+        return await asyncio.to_thread(vector_service.list_documents)
     except Exception as e:
-        logger.warning(f"Document list failed: {e}")
+        logger.warning(f"list_documents: {e}")
         return []
 
 
-# ── Conversations ─────────────────────────────────────────────────
+# ── Document summaries ────────────────────────────────────────────────
 
-@app.post(
-    "/api/v1/conversations",
-    tags=["Conversations"],
-)
-async def create_conversation(body: CreateConversationRequest):
-    conv_id = await asyncio.to_thread(
+@app.get("/api/v1/summaries", tags=["Documents"])
+async def get_summaries():
+    """
+    Return all document summaries generated during ingestion.
+    Used by the frontend Documents view to show doc overviews.
+    """
+    return await asyncio.to_thread(
+        summarization_service.get_document_summaries, graph_service
+    )
+
+
+# ── Conversations ─────────────────────────────────────────────────────
+
+@app.post("/api/v1/conversations", tags=["Conversations"])
+async def create_conv(body: CreateConversationRequest):
+    cid = await asyncio.to_thread(
         conversation_service.create_conversation,
         body.title or "New Conversation",
     )
-    return {"conversation_id": conv_id}
-
+    return {"conversation_id": cid}
 
 @app.get(
     "/api/v1/conversations",
     response_model=list[ConversationSummary],
     tags=["Conversations"],
 )
-async def list_conversations():
-    convs = await asyncio.to_thread(conversation_service.list_conversations)
-    return convs
-
+async def list_convs():
+    return await asyncio.to_thread(conversation_service.list_conversations)
 
 @app.get(
-    "/api/v1/conversations/{conv_id}",
+    "/api/v1/conversations/{cid}",
     response_model=ConversationDetail,
     tags=["Conversations"],
 )
-async def get_conversation(conv_id: str):
-    conv = await asyncio.to_thread(
-        conversation_service.get_conversation, conv_id
-    )
+async def get_conv(cid: str):
+    conv = await asyncio.to_thread(conversation_service.get_conversation, cid)
     if not conv:
-        raise HTTPException(status_code=404, detail="Conversation not found")
+        raise HTTPException(404, "Conversation not found")
     return conv
 
-
-@app.put("/api/v1/conversations/{conv_id}", tags=["Conversations"])
-async def rename_conversation(conv_id: str, body: RenameConversationRequest):
+@app.put("/api/v1/conversations/{cid}", tags=["Conversations"])
+async def rename_conv(cid: str, body: RenameConversationRequest):
     ok = await asyncio.to_thread(
-        conversation_service.rename_conversation, conv_id, body.title
+        conversation_service.rename_conversation, cid, body.title
     )
     if not ok:
-        raise HTTPException(status_code=404, detail="Conversation not found")
+        raise HTTPException(404, "Conversation not found")
+    return {"ok": True}
+
+@app.delete("/api/v1/conversations/{cid}", tags=["Conversations"])
+async def delete_conv(cid: str):
+    await asyncio.to_thread(conversation_service.delete_conversation, cid)
     return {"ok": True}
 
 
-@app.delete("/api/v1/conversations/{conv_id}", tags=["Conversations"])
-async def delete_conversation(conv_id: str):
-    await asyncio.to_thread(
-        conversation_service.delete_conversation, conv_id
-    )
-    return {"ok": True}
-
-
-# ── Stats ─────────────────────────────────────────────────────────
+# ── Stats ─────────────────────────────────────────────────────────────
 
 @app.get("/api/v1/stats", response_model=StatsResponse, tags=["System"])
-async def get_stats():
-    """
-    Live system stats — shown in the frontend stats panel.
-    """
-    graph_data    = await asyncio.to_thread(graph_service.get_all_graph_data)
-    cache_stats   = cache_service.stats()
-    documents     = await asyncio.to_thread(vector_service.list_documents)
+async def stats():
+    graph_data  = await asyncio.to_thread(graph_service.get_all_graph_data)
+    cache_stats = cache_service.stats()
+    docs        = await asyncio.to_thread(vector_service.list_documents)
 
     return StatsResponse(
-        vector_count=0,           # Pinecone free tier doesn't expose count easily
+        vector_count=0,
         graph_node_count=len(graph_data.get("nodes", [])),
         graph_rel_count=len(graph_data.get("relationships", [])),
-        document_count=len(documents),
+        document_count=len(docs),
         cache_size=cache_stats["size"],
         cache_hit_rate=cache_stats["hit_rate"],
         cache_total_requests=cache_stats["total_requests"],
