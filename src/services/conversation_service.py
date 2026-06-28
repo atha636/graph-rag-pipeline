@@ -1,21 +1,4 @@
-"""
-Conversation Memory Service
 
-Stores multi-turn conversation history so the LLM has
-context from previous messages in the same session.
-
-Architecture:
-- Each conversation has a unique ID (UUID)
-- Messages stored in Neo4j under a :Conversation node
-- Last N turns injected into every LLM prompt
-- Conversation list/delete endpoints exposed via API
-
-Why Neo4j (not a separate DB):
-- Already connected, no extra infra
-- Conversations are naturally graph-structured
-  (Session)-[:HAS_TURN]->(Turn)-[:REFERENCES]->(Entity)
-- Lets you later query "which conversations mentioned Tesla?"
-"""
 
 import uuid
 from datetime import datetime, timezone
