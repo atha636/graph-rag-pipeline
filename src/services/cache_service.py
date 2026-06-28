@@ -1,20 +1,3 @@
-"""
-Semantic Query Cache
-
-Instead of exact-match caching (which misses paraphrases),
-we embed the query and check cosine similarity against
-recently cached query embeddings. If the new query is
-semantically close enough (>= threshold) to a cached one,
-we return the cached answer immediately.
-
-Benefits:
-- Cuts Groq API cost for repeated/similar questions
-- Sub-10ms response for cache hits vs 2-4s for full pipeline
-- Shows interviewers you understand production cost optimisation
-
-Storage: in-memory ordered dict (LRU-style eviction).
-For production: swap the dict for Redis with TTL.
-"""
 
 import time
 from collections import OrderedDict
