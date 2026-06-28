@@ -172,35 +172,57 @@ class VectorService:
     def list_documents(self) -> list:
         """
         Return distinct document metadata from Pinecone.
-        Queries with a zero vector and extracts unique document_name entries.
+
+        Strategy: embed a broad catch-all query ("document information")
+        with a high top_k, then deduplicate by document_id from metadata.
+
+        This is more reliable than a zero-vector query (which has no
+        cosine direction and returns sparse/random results) while staying
+        within the Pinecone free-tier API surface (no list() endpoint).
+
+        For production with paid Pinecone, replace with index.list()
+        which paginates all vector IDs without needing a query vector.
         """
         try:
-            import numpy as np
-            zero_vec = np.zeros(self.model.get_sentence_embedding_dimension()).tolist()
-
-            result = self.index.query(
-                vector=zero_vec,
-                top_k=100,
-                include_metadata=True,
-                namespace=settings.PINECONE_NAMESPACE,
-            )
+            # Use several representative queries and merge results
+            # so we catch documents on different topics
+            probe_queries = [
+                "document information summary",
+                "company founded technology product",
+                "research data analysis report",
+            ]
 
             seen: dict = {}
-            for match in result.matches:
-                m = match.metadata
-                doc_id = m.get("document_id", "")
-                if doc_id and doc_id not in seen:
-                    seen[doc_id] = {
-                        "document_id":   doc_id,
-                        "document_name": m.get("document_name", "Unknown"),
-                        "document_type": m.get("document_type", ""),
-                        "uploaded_at":   m.get("uploaded_at", ""),
-                        "chunk_count":   0,
-                    }
-                if doc_id in seen:
+
+            for probe in probe_queries:
+                query_vec = self.generate_embedding(probe)
+
+                result = self.index.query(
+                    vector=query_vec,
+                    top_k=100,          # max per query
+                    include_metadata=True,
+                    namespace=settings.PINECONE_NAMESPACE,
+                )
+
+                for match in result.matches:
+                    m      = match.metadata or {}
+                    doc_id = m.get("document_id", "").strip()
+                    if not doc_id:
+                        continue
+
+                    if doc_id not in seen:
+                        seen[doc_id] = {
+                            "document_id":   doc_id,
+                            "document_name": m.get("document_name", "Unknown"),
+                            "document_type": m.get("document_type", ""),
+                            "uploaded_at":   m.get("uploaded_at", ""),
+                            "chunk_count":   0,
+                        }
                     seen[doc_id]["chunk_count"] += 1
 
-            return list(seen.values())
+            docs = list(seen.values())
+            logger.info(f"list_documents: found {len(docs)} distinct documents")
+            return docs
 
         except Exception as e:
             logger.warning(f"list_documents failed: {e}")
