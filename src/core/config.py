@@ -1,12 +1,12 @@
 from functools import lru_cache
-from typing import Optional
+from typing import List
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     """
-    Central configuration — all values can be overridden via .env
-    or environment variables without changing code.
+    Central configuration.
+    All values overridable via .env or environment variables.
     """
 
     # ── Application ───────────────────────────────────────────────
@@ -14,10 +14,15 @@ class Settings(BaseSettings):
     APP_ENV:  str = "development"
     API_PORT: int = 8000
 
+    # ── CORS — set ALLOWED_ORIGINS in production env ──────────────
+    # Comma-separated list of allowed frontend origins.
+    # Example: "https://your-app.vercel.app,https://your-custom-domain.com"
+    # In development, localhost origins are always added automatically.
+    ALLOWED_ORIGINS: str = ""
+
     # ── Groq ──────────────────────────────────────────────────────
-    GROQ_API_KEY: str
-    LLM_MODEL:    str = "llama3-8b-8192"
-    # Faster model for bulk extraction tasks (entity/relationship/intent)
+    GROQ_API_KEY:   str
+    LLM_MODEL:      str = "llama3-8b-8192"
     LLM_FAST_MODEL: str = "llama-3.1-8b-instant"
 
     # ── Pinecone ──────────────────────────────────────────────────
@@ -30,33 +35,26 @@ class Settings(BaseSettings):
     NEO4J_USERNAME: str
     NEO4J_PASSWORD: str
 
-    # ── Embedding model ───────────────────────────────────────────
+    # ── Embedding ─────────────────────────────────────────────────
     EMBEDDING_MODEL: str = "BAAI/bge-large-en-v1.5"
 
-    # ── Document ingestion tuning (all overridable via .env) ──────
-    # Chunk size in characters
-    CHUNK_SIZE:    int = 1500
-    # Overlap between consecutive chunks
-    CHUNK_OVERLAP: int = 200
-    # How many chunks to batch per Pinecone upsert call
+    # ── Ingestion tuning ──────────────────────────────────────────
+    CHUNK_SIZE:          int = 1500
+    CHUNK_OVERLAP:       int = 200
     PINECONE_BATCH_SIZE: int = 100
-    # Sample 1 in N chunks for graph relationship extraction
-    # (higher = faster ingestion, lower = denser graph)
-    GRAPH_SAMPLE_RATE: int = 5
-    # Skip chunks shorter than this for graph extraction
+    GRAPH_SAMPLE_RATE:   int = 5
     GRAPH_MIN_CHUNK_LEN: int = 200
 
-    # ── Semantic cache ────────────────────────────────────────────
+    # ── Cache ─────────────────────────────────────────────────────
     CACHE_SIMILARITY_THRESHOLD: float = 0.92
     CACHE_MAX_ENTRIES:          int   = 200
-    CACHE_TTL_SECONDS:          int   = 3600   # 1 hour
+    CACHE_TTL_SECONDS:          int   = 3600
 
     # ── Ranking ───────────────────────────────────────────────────
-    RANKING_MAX_SOURCES:      int   = 5
-    RANKING_MIN_VECTOR:       int   = 2
-    RANKING_MIN_GRAPH:        int   = 1
-    # MMR lambda: 1.0 = pure relevance, 0.0 = pure diversity
-    RANKING_MMR_LAMBDA:       float = 0.7
+    RANKING_MAX_SOURCES: int   = 5
+    RANKING_MIN_VECTOR:  int   = 2
+    RANKING_MIN_GRAPH:   int   = 1
+    RANKING_MMR_LAMBDA:  float = 0.7
 
     # ── Query ─────────────────────────────────────────────────────
     QUERY_DEFAULT_TOP_K: int = 5
@@ -67,6 +65,23 @@ class Settings(BaseSettings):
         case_sensitive=True,
         extra="ignore",
     )
+
+    def get_allowed_origins(self) -> List[str]:
+        """
+        Build the full CORS origins list.
+        Always includes localhost for development.
+        Adds any origins from ALLOWED_ORIGINS env var.
+        """
+        origins = [
+            "http://localhost:3000",
+            "http://localhost:5173",
+            "http://127.0.0.1:3000",
+            "http://127.0.0.1:5173",
+        ]
+        if self.ALLOWED_ORIGINS:
+            extra = [o.strip() for o in self.ALLOWED_ORIGINS.split(",") if o.strip()]
+            origins.extend(extra)
+        return origins
 
 
 @lru_cache

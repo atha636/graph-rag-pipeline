@@ -4,8 +4,18 @@ import type {
   GraphData, ConversationSummary, ConversationDetail, StatsData,
 } from '../types';
 
-const api = axios.create({ baseURL: '', timeout: 90000 });
+// ── Base URL ──────────────────────────────────────────────────────
+// In development: empty string → Vite proxy handles /api → localhost:8000
+// In production:  VITE_API_URL → https://graphrag-api.onrender.com
+declare const __API_URL__: string;
+const BASE_URL = (typeof __API_URL__ !== 'undefined' ? __API_URL__ : '') || '';
 
+const api = axios.create({
+  baseURL: BASE_URL,
+  timeout: 90000,
+});
+
+// ── Cancellation ──────────────────────────────────────────────────
 let activeQueryCancel: CancelTokenSource | null = null;
 
 export const cancelActiveQuery = () => {
@@ -13,7 +23,12 @@ export const cancelActiveQuery = () => {
   activeQueryCancel = null;
 };
 
-const withRetry = async <T>(fn: () => Promise<T>, retries = 2, delay = 800): Promise<T> => {
+// ── Retry helper ──────────────────────────────────────────────────
+const withRetry = async <T>(
+  fn: () => Promise<T>,
+  retries = 2,
+  delay = 800,
+): Promise<T> => {
   try { return await fn(); }
   catch (err) {
     if (retries <= 0) throw err;
@@ -24,7 +39,7 @@ const withRetry = async <T>(fn: () => Promise<T>, retries = 2, delay = 800): Pro
   }
 };
 
-// ── Query (non-streaming fallback) ────────────────────────────────
+// ── Query ─────────────────────────────────────────────────────────
 export const queryAPI = async (request: QueryRequest): Promise<QueryResponse> => {
   cancelActiveQuery();
   activeQueryCancel = axios.CancelToken.source();
@@ -35,7 +50,7 @@ export const queryAPI = async (request: QueryRequest): Promise<QueryResponse> =>
   return data;
 };
 
-// ── SSE Streaming query ───────────────────────────────────────────
+// ── SSE Streaming ─────────────────────────────────────────────────
 export interface StreamCallbacks {
   onMeta:  (meta: { sources: unknown[]; documents: string[]; cache_hit: boolean; intent?: string }) => void;
   onChunk: (text: string) => void;
@@ -45,14 +60,14 @@ export interface StreamCallbacks {
 
 export const queryStream = (
   request: QueryRequest,
-  callbacks: StreamCallbacks
+  callbacks: StreamCallbacks,
 ): (() => void) => {
   let cancelled = false;
   let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
 
   const run = async () => {
     try {
-      const response = await fetch('/api/v1/query/stream', {
+      const response = await fetch(`${BASE_URL}/api/v1/query/stream`, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify(request),
@@ -63,14 +78,13 @@ export const queryStream = (
         return;
       }
 
-      reader = response.body!.getReader();
+      reader  = response.body!.getReader();
       const decoder = new TextDecoder();
-      let buffer = '';
+      let buffer    = '';
 
       while (!cancelled) {
         const { done, value } = await reader.read();
         if (done) break;
-
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split('\n');
         buffer = lines.pop() ?? '';
@@ -82,7 +96,7 @@ export const queryStream = (
             if (msg.type === 'meta')  callbacks.onMeta(msg);
             if (msg.type === 'chunk') callbacks.onChunk(msg.text);
             if (msg.type === 'done')  callbacks.onDone(msg.latency_ms);
-          } catch { /* malformed SSE line */ }
+          } catch { /* malformed line */ }
         }
       }
     } catch (err) {
@@ -91,17 +105,13 @@ export const queryStream = (
   };
 
   run();
-
-  return () => {
-    cancelled = true;
-    reader?.cancel();
-  };
+  return () => { cancelled = true; reader?.cancel(); };
 };
 
 // ── Upload ────────────────────────────────────────────────────────
 export const uploadDocumentAPI = async (
   file: File,
-  onProgress?: (pct: number) => void
+  onProgress?: (pct: number) => void,
 ): Promise<UploadResponse> => {
   const formData = new FormData();
   formData.append('file', file);
@@ -109,7 +119,8 @@ export const uploadDocumentAPI = async (
     api.post<UploadResponse>('/api/v1/upload', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
       onUploadProgress: e => {
-        if (onProgress && e.total) onProgress(Math.round((e.loaded * 100) / e.total));
+        if (onProgress && e.total)
+          onProgress(Math.round((e.loaded * 100) / e.total));
       },
     })
   );
@@ -132,6 +143,14 @@ export const getDocumentsAPI = async () => {
       document_id: string; document_name: string;
       document_type: string; uploaded_at: string; chunk_count: number;
     }>;
+  } catch { return []; }
+};
+
+// ── Summaries ─────────────────────────────────────────────────────
+export const getSummariesAPI = async () => {
+  try {
+    const { data } = await api.get('/api/v1/summaries');
+    return data as Array<{ document_id: string; document_name: string; summary: string }>;
   } catch { return []; }
 };
 
@@ -169,16 +188,8 @@ export const getStatsAPI = async (): Promise<StatsData | null> => {
 
 // ── Health ────────────────────────────────────────────────────────
 export const healthCheckAPI = async (): Promise<boolean> => {
-  try { await api.get('/health', { timeout: 5000 }); return true; }
-  catch { return false; }
-};
-
-// ── Summaries ─────────────────────────────────────────────────────
-export const getSummariesAPI = async (): Promise<Array<{
-  document_id: string; document_name: string; summary: string;
-}>> => {
   try {
-    const { data } = await api.get('/api/v1/summaries');
-    return data;
-  } catch { return []; }
+    await api.get('/health', { timeout: 5000 });
+    return true;
+  } catch { return false; }
 };
