@@ -1,0 +1,62 @@
+# Render deployment configuration
+# Docs: https://render.com/docs/blueprint-spec
+
+services:
+  - type: web
+    name: graphrag-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free          # upgrade to starter ($7/mo) for always-on
+    region: oregon      # closest to most users
+
+    # Health check — Render uses this to know when the app is ready
+    healthCheckPath: /health
+
+    # Auto-deploy on every push to main branch
+    autoDeploy: true
+
+    # Environment variables — set these in Render dashboard
+    # DO NOT put actual values here (this file goes in git)
+    envVars:
+      - key: APP_ENV
+        value: production
+
+      - key: GROQ_API_KEY
+        sync: false       # must be set manually in Render dashboard
+
+      - key: PINECONE_API_KEY
+        sync: false
+
+      - key: PINECONE_INDEX_NAME
+        sync: false
+
+      - key: PINECONE_NAMESPACE
+        value: default
+
+      - key: NEO4J_URI
+        sync: false
+
+      - key: NEO4J_USERNAME
+        sync: false
+
+      - key: NEO4J_PASSWORD
+        sync: false
+
+      - key: ALLOWED_ORIGINS
+        sync: false       # set to your Vercel URL: https://your-app.vercel.app
+
+      # Tuning — safe defaults, override if needed
+      - key: CHUNK_SIZE
+        value: "1500"
+
+      - key: CHUNK_OVERLAP
+        value: "200"
+
+      - key: GRAPH_SAMPLE_RATE
+        value: "5"
+
+      - key: CACHE_TTL_SECONDS
+        value: "3600"
+
+      - key: RANKING_MMR_LAMBDA
+        value: "0.7"
