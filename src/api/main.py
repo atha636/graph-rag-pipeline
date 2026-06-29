@@ -1,13 +1,4 @@
-"""
-Graph RAG API v2.1 — Production FastAPI application.
 
-New in this version:
-- SummarizationService integrated into ingestion pipeline
-- /api/v1/summaries  — get all document summaries
-- /api/v1/search     — document-scoped semantic search
-- MMR ranking (via upgraded RankingService)
-- All tuning params driven from config (no magic numbers)
-"""
 
 import asyncio
 import json
