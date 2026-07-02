@@ -1,62 +1,50 @@
-# Render deployment configuration
-# Docs: https://render.com/docs/blueprint-spec
-
 services:
   - type: web
     name: graphrag-api
     runtime: docker
     dockerfilePath: ./Dockerfile
-    plan: free          # upgrade to starter ($7/mo) for always-on
-    region: oregon      # closest to most users
-
-    # Health check — Render uses this to know when the app is ready
+    plan: free
+    region: oregon
     healthCheckPath: /health
-
-    # Auto-deploy on every push to main branch
     autoDeploy: true
-
-    # Environment variables — set these in Render dashboard
-    # DO NOT put actual values here (this file goes in git)
     envVars:
       - key: APP_ENV
         value: production
 
+      # ── Required — set in Render/Railway dashboard ────────────────
       - key: GROQ_API_KEY
-        sync: false       # must be set manually in Render dashboard
-
+        sync: false
       - key: PINECONE_API_KEY
         sync: false
-
       - key: PINECONE_INDEX_NAME
         sync: false
-
       - key: PINECONE_NAMESPACE
         value: default
-
       - key: NEO4J_URI
         sync: false
-
       - key: NEO4J_USERNAME
         sync: false
-
       - key: NEO4J_PASSWORD
         sync: false
 
+      # ── CORS — add your Vercel URL after deploying frontend ───────
       - key: ALLOWED_ORIGINS
-        sync: false       # set to your Vercel URL: https://your-app.vercel.app
+        sync: false
 
-      # Tuning — safe defaults, override if needed
+      # ── Embedding model ───────────────────────────────────────────
+      # Free tier (512 MB RAM): all-MiniLM-L6-v2  (90 MB, default)
+      # Paid tier (2+ GB RAM):  BAAI/bge-large-en-v1.5 (1.3 GB, better)
+      - key: EMBEDDING_MODEL
+        value: all-MiniLM-L6-v2
+
+      # ── Optional tuning ───────────────────────────────────────────
       - key: CHUNK_SIZE
         value: "1500"
-
       - key: CHUNK_OVERLAP
         value: "200"
-
       - key: GRAPH_SAMPLE_RATE
         value: "5"
-
       - key: CACHE_TTL_SECONDS
         value: "3600"
-
       - key: RANKING_MMR_LAMBDA
         value: "0.7"

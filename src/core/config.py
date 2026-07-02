@@ -36,7 +36,11 @@ class Settings(BaseSettings):
     NEO4J_PASSWORD: str
 
     # ── Embedding ─────────────────────────────────────────────────
-    EMBEDDING_MODEL: str = "BAAI/bge-large-en-v1.5"
+    # Switched from BAAI/bge-large-en-v1.5 (1.3 GB) to all-MiniLM-L6-v2 (90 MB)
+    # Quality is slightly lower but works on all free hosting tiers.
+    # To use the large model, set EMBEDDING_MODEL=BAAI/bge-large-en-v1.5 in env vars
+    # and deploy on a platform with at least 2 GB RAM (Railway, Fly.io paid).
+    EMBEDDING_MODEL: str = "all-MiniLM-L6-v2"
 
     # ── Ingestion tuning ──────────────────────────────────────────
     CHUNK_SIZE:          int = 1500
